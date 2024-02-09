@@ -266,7 +266,7 @@ impl HummockReadVersion {
                 StagingData::ImmMem(imm) => {
                     if let Some(item) = self.staging.imm.front() {
                         // check batch_id order from newest to old
-                        debug_assert!(item.batch_id() < imm.batch_id());
+                        assert!(item.batch_id() < imm.batch_id());
                     }
 
                     self.staging.imm.push_front(imm)
@@ -285,7 +285,7 @@ impl HummockReadVersion {
                     //    are always the suffix of self.staging.imm
 
                     // Check 1)
-                    debug_assert!(self
+                    assert!(self
                         .staging
                         .imm
                         .iter()
@@ -307,7 +307,7 @@ impl HummockReadVersion {
 
                     if !intersect_imm_ids.is_empty() {
                         // Check 2)
-                        debug_assert!(check_subset_preserve_order(
+                        assert!(check_subset_preserve_order(
                             intersect_imm_ids.iter().copied(),
                             self.staging.imm.iter().map(|imm| imm.batch_id()).rev(),
                         ));
