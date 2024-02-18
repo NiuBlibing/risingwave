@@ -268,11 +268,11 @@ impl StreamRpcManager {
     ) -> MetaResult<Vec<RSP>> {
         let pool = self.env.stream_client_pool();
         let f = &f;
-        Ok(try_join_all(request.map(|(node, input)| async move {
+        let iters = request.map(|(node, input)| async move {
             let client = pool.get(node).await?;
             f(client, input).await
-        }))
-        .await?)
+        });
+        Ok(try_join_all_2(iters).await?)
     }
 
     async fn broadcast<RSP, Fut: Future<Output = Result<RSP, RpcError>> + 'static>(
@@ -390,4 +390,12 @@ impl StreamRpcManager {
         .await?;
         Ok(())
     }
+}
+
+async fn try_join_all_2<I, RSP, E>(iters: I) -> Result<Vec<RSP>, E>
+where
+    I: IntoIterator,
+    I::Item: Future<Output = Result<RSP, E>>,
+{
+    try_join_all(iters).await
 }
