@@ -147,6 +147,7 @@ pub struct TracedNewLocalOptions {
     pub op_consistency_level: TracedOpConsistencyLevel,
     pub table_option: TracedTableOption,
     pub is_replicated: bool,
+    pub is_log_store: bool,
 }
 
 #[cfg(test)]
@@ -159,6 +160,7 @@ impl TracedNewLocalOptions {
                 retention_seconds: None,
             },
             is_replicated: false,
+            is_log_store: false,
         }
     }
 }

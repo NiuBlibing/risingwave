@@ -45,6 +45,7 @@ impl ExecutorBuilder for SubscriptionExecutorBuilder {
                     retention_seconds: None,
                 },
                 is_replicated: false,
+                is_log_store: false,
             })
             .await;
 

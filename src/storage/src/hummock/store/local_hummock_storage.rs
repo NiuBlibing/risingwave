@@ -57,6 +57,7 @@ pub struct LocalHummockStorage {
 
     table_id: TableId,
     op_consistency_level: OpConsistencyLevel,
+    is_log_store: bool,
     table_option: TableOption,
 
     instance_guard: LocalInstanceGuard,
@@ -285,6 +286,11 @@ impl LocalStateStore for LocalHummockStorage {
     async fn flush(&mut self) -> StorageResult<usize> {
         let buffer = self.mem_table.drain().into_parts();
         let mut kv_pairs = Vec::with_capacity(buffer.len());
+        let mut old_values = if self.is_flush_old_value() {
+            Some(Vec::with_capacity(buffer.len()))
+        } else {
+            None
+        };
         for (key, key_op) in buffer {
             match key_op {
                 // Currently, some executors do not strictly comply with these semantics. As
@@ -304,6 +310,9 @@ impl LocalStateStore for LocalHummockStorage {
                         .await?;
                     }
                     kv_pairs.push((key, SharedBufferValue::Insert(value)));
+                    if let Some(old_values) = &mut old_values {
+                        old_values.push(Bytes::new());
+                    }
                 }
                 KeyOp::Delete(old_value) => {
                     if ENABLE_SANITY_CHECK {
@@ -319,6 +328,9 @@ impl LocalStateStore for LocalHummockStorage {
                         .await?;
                     }
                     kv_pairs.push((key, SharedBufferValue::Delete));
+                    if let Some(old_values) = &mut old_values {
+                        old_values.push(old_value);
+                    }
                 }
                 KeyOp::Update((old_value, new_value)) => {
                     if ENABLE_SANITY_CHECK {
@@ -335,11 +347,15 @@ impl LocalStateStore for LocalHummockStorage {
                         .await?;
                     }
                     kv_pairs.push((key, SharedBufferValue::Update(new_value)));
+                    if let Some(old_values) = &mut old_values {
+                        old_values.push(old_value);
+                    }
                 }
             }
         }
         self.flush_inner(
             kv_pairs,
+            old_values,
             WriteOptions {
                 epoch: self.epoch(),
                 table_id: self.table_id,
@@ -432,6 +448,7 @@ impl LocalHummockStorage {
     async fn flush_inner(
         &mut self,
         sorted_items: Vec<SharedBufferItem>,
+        old_values: Option<Vec<Bytes>>,
         write_options: WriteOptions,
     ) -> StorageResult<usize> {
         let epoch = write_options.epoch;
@@ -480,6 +497,7 @@ impl LocalHummockStorage {
                 epoch,
                 self.spill_offset,
                 sorted_items,
+                old_values,
                 size,
                 table_id,
                 instance_id,
@@ -530,6 +548,7 @@ impl LocalHummockStorage {
             epoch: None,
             table_id: option.table_id,
             op_consistency_level: option.op_consistency_level,
+            is_log_store: option.is_log_store,
             table_option: option.table_option,
             is_replicated: option.is_replicated,
             instance_guard,
@@ -555,6 +574,14 @@ impl LocalHummockStorage {
 
     pub fn instance_id(&self) -> u64 {
         self.instance_guard.instance_id
+    }
+
+    fn is_flush_old_value(&self) -> bool {
+        self.is_log_store
+            && matches!(
+                &self.op_consistency_level,
+                OpConsistencyLevel::ConsistentOldValue(_)
+            )
     }
 }
 

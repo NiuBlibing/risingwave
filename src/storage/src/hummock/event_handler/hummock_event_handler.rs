@@ -966,6 +966,7 @@ mod tests {
                 epoch,
                 spill_offset,
                 vec![(TableKey(Bytes::from("key")), SharedBufferValue::Delete)],
+                None,
                 10,
                 table_id,
                 instance_id,

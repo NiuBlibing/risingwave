@@ -1251,6 +1251,7 @@ mod tests {
             epoch,
             0,
             sorted_items,
+            None,
             size,
             TEST_TABLE_ID,
             LocalInstanceId::default(),

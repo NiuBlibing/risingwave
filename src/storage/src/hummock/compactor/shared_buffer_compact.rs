@@ -291,6 +291,15 @@ pub async fn merge_imms_in_memory(
     assert!(imms.iter().rev().map(|imm| imm.batch_id()).is_sorted());
     let max_imm_id = imms[0].batch_id();
 
+    let has_old_value = imms[0].inner.has_old_value();
+    let key_count = imms.iter().map(|imm| imm.inner.key_count()).sum();
+    let value_count = imms.iter().map(|imm| imm.inner.value_count()).sum();
+    // TODO: make sure that the corner case on switch_op_consistency is handled
+    // If the imm of a table id contains old value, all other imm of the same table id should have old value
+    assert!(imms
+        .iter()
+        .all(|imm| imm.inner.has_old_value() == has_old_value));
+
     let mut imm_iters = Vec::with_capacity(imms.len());
     for imm in imms {
         assert!(imm.kv_count() > 0, "imm should not be empty");
@@ -315,8 +324,13 @@ pub async fn merge_imms_in_memory(
 
     let first_item_key = mi.current_key_entry().key.clone();
 
-    let mut merged_entries: Vec<SharedBufferKeyEntry> = Vec::new();
-    let mut values: Vec<VersionedSharedBufferValue> = Vec::new();
+    let mut merged_entries: Vec<SharedBufferKeyEntry> = Vec::with_capacity(key_count);
+    let mut values: Vec<VersionedSharedBufferValue> = Vec::with_capacity(value_count);
+    let mut old_values: Option<Vec<Bytes>> = if has_old_value {
+        Some(Vec::with_capacity(value_count))
+    } else {
+        None
+    };
 
     // Use first key, max epoch to initialize the tracker to ensure that the check first call to full_key_tracker.observe will succeed
     let mut full_key_tracker = FullKeyTracker::<Bytes>::new(FullKey::new_with_gap_epoch(
@@ -335,7 +349,7 @@ pub async fn merge_imms_in_memory(
             .observe_multi_version(
                 user_key,
                 key_entry
-                    .values
+                    .new_values
                     .iter()
                     .map(|(epoch_with_gap, _)| *epoch_with_gap),
             )
@@ -349,10 +363,13 @@ pub async fn merge_imms_in_memory(
         }
         values.extend(
             key_entry
-                .values
+                .new_values
                 .iter()
                 .map(|(epoch_with_gap, value)| (*epoch_with_gap, value.clone())),
         );
+        if let Some(old_values) = &mut old_values {
+            old_values.extend(key_entry.old_values.expect("should exist").iter().cloned())
+        }
         mi.advance_peek_to_next_key();
         // Since there is no blocking point in this method, but it is cpu intensive, we call this method
         // to do cooperative scheduling
@@ -364,6 +381,7 @@ pub async fn merge_imms_in_memory(
             epochs,
             merged_entries,
             values,
+            old_values,
             kv_count,
             merged_size,
             max_imm_id,

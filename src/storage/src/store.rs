@@ -458,6 +458,8 @@ pub struct NewLocalOptions {
     /// Indicate if this is replicated. If it is, we should not
     /// upload its ReadVersions.
     pub is_replicated: bool,
+
+    pub is_log_store: bool,
 }
 
 impl From<TracedNewLocalOptions> for NewLocalOptions {
@@ -472,6 +474,7 @@ impl From<TracedNewLocalOptions> for NewLocalOptions {
             },
             table_option: value.table_option.into(),
             is_replicated: value.is_replicated,
+            is_log_store: value.is_log_store,
         }
     }
 }
@@ -488,6 +491,7 @@ impl From<NewLocalOptions> for TracedNewLocalOptions {
             },
             table_option: value.table_option.into(),
             is_replicated: value.is_replicated,
+            is_log_store: value.is_log_store,
         }
     }
 }
@@ -503,6 +507,7 @@ impl NewLocalOptions {
             op_consistency_level,
             table_option,
             is_replicated: false,
+            is_log_store: false,
         }
     }
 
@@ -516,6 +521,7 @@ impl NewLocalOptions {
             op_consistency_level,
             table_option,
             is_replicated: true,
+            is_log_store: false,
         }
     }
 
@@ -527,6 +533,7 @@ impl NewLocalOptions {
                 retention_seconds: None,
             },
             is_replicated: false,
+            is_log_store: false,
         }
     }
 }

@@ -365,6 +365,7 @@ impl<S: StateStore> LogStoreFactory for KvLogStoreFactory<S> {
                     retention_seconds: None,
                 },
                 is_replicated: false,
+                is_log_store: false,
             })
             .await;
 

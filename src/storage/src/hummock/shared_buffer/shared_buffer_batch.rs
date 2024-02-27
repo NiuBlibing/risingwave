@@ -76,14 +76,11 @@ pub(crate) type VersionedSharedBufferValue = (EpochWithGap, SharedBufferValue<By
 
 pub(crate) struct SharedBufferVersionedEntryRef<'a> {
     pub(crate) key: &'a TableKey<Bytes>,
-    pub(crate) values: &'a [VersionedSharedBufferValue],
+    pub(crate) new_values: &'a [VersionedSharedBufferValue],
+    pub(crate) old_values: Option<&'a [Bytes]>,
 }
 
-fn values<'a>(
-    i: usize,
-    entries: &'a [SharedBufferKeyEntry],
-    values: &'a [VersionedSharedBufferValue],
-) -> &'a [VersionedSharedBufferValue] {
+fn values<'a, T>(i: usize, entries: &'a [SharedBufferKeyEntry], values: &'a [T]) -> &'a [T] {
     &values[entries[i].value_offset
         ..entries
             .get(i)
@@ -105,6 +102,7 @@ pub(crate) struct SharedBufferKeyEntry {
 pub(crate) struct SharedBufferBatchInner {
     entries: Vec<SharedBufferKeyEntry>,
     new_values: Vec<VersionedSharedBufferValue>,
+    old_values: Option<Vec<Bytes>>,
     /// The epochs of the data in batch, sorted in ascending order (old to new)
     epochs: Vec<HummockEpoch>,
     kv_count: usize,
@@ -121,6 +119,7 @@ impl SharedBufferBatchInner {
         epoch: HummockEpoch,
         spill_offset: u16,
         payload: Vec<SharedBufferItem>,
+        old_values: Option<Vec<Bytes>>,
         size: usize,
         _tracker: Option<MemoryTracker>,
     ) -> Self {
@@ -143,6 +142,7 @@ impl SharedBufferBatchInner {
         SharedBufferBatchInner {
             entries,
             new_values,
+            old_values,
             epochs: vec![epoch],
             kv_count,
             size,
@@ -160,6 +160,7 @@ impl SharedBufferBatchInner {
         epochs: Vec<HummockEpoch>,
         entries: Vec<SharedBufferKeyEntry>,
         new_values: Vec<VersionedSharedBufferValue>,
+        old_values: Option<Vec<Bytes>>,
         num_items: usize,
         size: usize,
         imm_id: ImmId,
@@ -179,6 +180,7 @@ impl SharedBufferBatchInner {
         Self {
             entries,
             new_values,
+            old_values,
             epochs,
             kv_count: num_items,
             size,
@@ -214,6 +216,18 @@ impl SharedBufferBatchInner {
 
         None
     }
+
+    pub fn has_old_value(&self) -> bool {
+        self.old_values.is_some()
+    }
+
+    pub fn key_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn value_count(&self) -> usize {
+        self.new_values.len()
+    }
 }
 
 impl PartialEq for SharedBufferBatchInner {
@@ -246,6 +260,7 @@ impl SharedBufferBatch {
                 epoch,
                 0,
                 sorted_items,
+                None,
                 size,
                 None,
             )),
@@ -412,12 +427,20 @@ impl SharedBufferBatch {
         epoch: HummockEpoch,
         spill_offset: u16,
         sorted_items: Vec<SharedBufferItem>,
+        old_values: Option<Vec<Bytes>>,
         size: usize,
         table_id: TableId,
         instance_id: LocalInstanceId,
         tracker: Option<MemoryTracker>,
     ) -> Self {
-        let inner = SharedBufferBatchInner::new(epoch, spill_offset, sorted_items, size, tracker);
+        let inner = SharedBufferBatchInner::new(
+            epoch,
+            spill_offset,
+            sorted_items,
+            old_values,
+            size,
+            tracker,
+        );
         SharedBufferBatch {
             inner: Arc::new(inner),
             table_id,
@@ -464,7 +487,8 @@ impl SharedBufferBatch {
         size: usize,
         table_id: TableId,
     ) -> Self {
-        let inner = SharedBufferBatchInner::new(epoch, spill_offset, sorted_items, size, None);
+        let inner =
+            SharedBufferBatchInner::new(epoch, spill_offset, sorted_items, None, size, None);
         SharedBufferBatch {
             inner: Arc::new(inner),
             table_id,
@@ -542,7 +566,12 @@ impl SharedBufferBatchIterator<Forward> {
         assert_eq!(self.current_value_idx, 0);
         SharedBufferVersionedEntryRef {
             key: &self.inner.entries[self.current_idx].key,
-            values: self.inner.values(self.current_idx),
+            new_values: self.inner.values(self.current_idx),
+            old_values: self
+                .inner
+                .old_values
+                .as_ref()
+                .map(|old_values| values(self.current_idx, &self.inner.entries, old_values)),
         }
     }
 }
