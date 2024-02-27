@@ -41,10 +41,9 @@ use crate::hummock::iterator::{
     Forward, ForwardMergeRangeIterator, HummockIterator, MergeIterator, UserIterator,
 };
 use crate::hummock::shared_buffer::shared_buffer_batch::{
-    SharedBufferBatch, SharedBufferBatchInner, SharedBufferVersionedEntry,
+    SharedBufferBatch, SharedBufferBatchInner, SharedBufferValue, SharedBufferVersionedEntry,
 };
 use crate::hummock::utils::MemoryTracker;
-use crate::hummock::value::HummockValue;
 use crate::hummock::{
     BlockedXor16FilterBuilder, CachePolicy, CompactionDeleteRangeIterator, GetObjectId,
     HummockError, HummockResult, SstableBuilderOptions, SstableObjectIdManagerRef,
@@ -324,7 +323,7 @@ pub async fn merge_imms_in_memory(
         first_item_key,
         EpochWithGap::new_max_epoch(),
     ));
-    let mut table_key_versions: Vec<(EpochWithGap, HummockValue<Bytes>)> = Vec::new();
+    let mut table_key_versions: Vec<(EpochWithGap, SharedBufferValue<Bytes>)> = Vec::new();
 
     while mi.is_valid() {
         let key_entry = mi.current_key_entry();
@@ -551,7 +550,7 @@ mod tests {
     use risingwave_hummock_sdk::key::{prefix_slice_with_vnode, TableKey};
 
     use crate::hummock::compactor::shared_buffer_compact::generate_splits;
-    use crate::hummock::value::HummockValue;
+    use crate::hummock::shared_buffer::shared_buffer_batch::SharedBufferValue;
     use crate::mem_table::ImmutableMemtable;
     use crate::opts::StorageOpts;
 
@@ -569,7 +568,7 @@ mod tests {
             0,
             vec![(
                 generate_key("dddd"),
-                HummockValue::put(Bytes::from_static(b"v3")),
+                SharedBufferValue::Insert(Bytes::from_static(b"v3")),
             )],
             1024 * 1024,
             TableId::new(1),
@@ -579,7 +578,7 @@ mod tests {
             0,
             vec![(
                 generate_key("abb"),
-                HummockValue::put(Bytes::from_static(b"v3")),
+                SharedBufferValue::Insert(Bytes::from_static(b"v3")),
             )],
             (1024 + 256) * 1024,
             TableId::new(1),
@@ -590,7 +589,7 @@ mod tests {
             0,
             vec![(
                 generate_key("abc"),
-                HummockValue::put(Bytes::from_static(b"v2")),
+                SharedBufferValue::Insert(Bytes::from_static(b"v2")),
             )],
             (1024 + 512) * 1024,
             TableId::new(1),
@@ -600,7 +599,7 @@ mod tests {
             0,
             vec![(
                 generate_key("aaa"),
-                HummockValue::put(Bytes::from_static(b"v3")),
+                SharedBufferValue::Insert(Bytes::from_static(b"v3")),
             )],
             (1024 + 512) * 1024,
             TableId::new(1),
@@ -611,7 +610,7 @@ mod tests {
             0,
             vec![(
                 generate_key("aaa"),
-                HummockValue::put(Bytes::from_static(b"v3")),
+                SharedBufferValue::Insert(Bytes::from_static(b"v3")),
             )],
             (1024 + 256) * 1024,
             TableId::new(2),

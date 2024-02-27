@@ -1200,13 +1200,13 @@ mod tests {
         iterator_test_table_key_of, transform_shared_buffer,
     };
     use crate::hummock::local_version::pinned_version::PinnedVersion;
-    use crate::hummock::shared_buffer::shared_buffer_batch::SharedBufferBatch;
-    use crate::hummock::value::HummockValue;
+    use crate::hummock::shared_buffer::shared_buffer_batch::{
+        SharedBufferBatch, SharedBufferValue,
+    };
     use crate::hummock::{HummockError, HummockResult, MemoryLimiter};
     use crate::mem_table::{ImmId, ImmutableMemtable};
     use crate::monitor::HummockStateStoreMetrics;
     use crate::opts::StorageOpts;
-    use crate::storage_value::StorageValue;
 
     const INITIAL_EPOCH: HummockEpoch = 5;
     const TEST_TABLE_ID: TableId = TableId { table_id: 233 };
@@ -1238,10 +1238,10 @@ mod tests {
         epoch: HummockEpoch,
         limiter: Option<&MemoryLimiter>,
     ) -> ImmutableMemtable {
-        let sorted_items = SharedBufferBatch::build_shared_buffer_item_batches(vec![(
+        let sorted_items = vec![(
             TableKey(Bytes::from(dummy_table_key())),
-            StorageValue::new_delete(),
-        )]);
+            SharedBufferValue::Delete,
+        )];
         let size = SharedBufferBatch::measure_batch_size(&sorted_items);
         let tracker = match limiter {
             Some(limiter) => Some(limiter.require_memory(size as u64).await),
@@ -1593,18 +1593,18 @@ mod tests {
     #[tokio::test]
     async fn test_drop_success_merging_task() {
         let table_id = TableId { table_id: 1004 };
-        let shared_buffer_items1: Vec<(Vec<u8>, HummockValue<Bytes>)> = vec![
+        let shared_buffer_items1: Vec<(Vec<u8>, SharedBufferValue<Bytes>)> = vec![
             (
                 iterator_test_table_key_of(1),
-                HummockValue::put(Bytes::from("value1")),
+                SharedBufferValue::Insert(Bytes::from("value1")),
             ),
             (
                 iterator_test_table_key_of(2),
-                HummockValue::put(Bytes::from("value2")),
+                SharedBufferValue::Insert(Bytes::from("value2")),
             ),
             (
                 iterator_test_table_key_of(3),
-                HummockValue::put(Bytes::from("value3")),
+                SharedBufferValue::Insert(Bytes::from("value3")),
             ),
         ];
         let epoch = 1;
@@ -1613,18 +1613,18 @@ mod tests {
             epoch,
             table_id,
         );
-        let shared_buffer_items2: Vec<(Vec<u8>, HummockValue<Bytes>)> = vec![
+        let shared_buffer_items2: Vec<(Vec<u8>, SharedBufferValue<Bytes>)> = vec![
             (
                 iterator_test_table_key_of(1),
-                HummockValue::put(Bytes::from("value12")),
+                SharedBufferValue::Insert(Bytes::from("value12")),
             ),
             (
                 iterator_test_table_key_of(2),
-                HummockValue::put(Bytes::from("value22")),
+                SharedBufferValue::Insert(Bytes::from("value22")),
             ),
             (
                 iterator_test_table_key_of(3),
-                HummockValue::put(Bytes::from("value32")),
+                SharedBufferValue::Insert(Bytes::from("value32")),
             ),
         ];
         let epoch = 2;
@@ -1634,18 +1634,18 @@ mod tests {
             table_id,
         );
 
-        let shared_buffer_items3: Vec<(Vec<u8>, HummockValue<Bytes>)> = vec![
+        let shared_buffer_items3: Vec<(Vec<u8>, SharedBufferValue<Bytes>)> = vec![
             (
                 iterator_test_table_key_of(1),
-                HummockValue::put(Bytes::from("value13")),
+                SharedBufferValue::Insert(Bytes::from("value13")),
             ),
             (
                 iterator_test_table_key_of(2),
-                HummockValue::put(Bytes::from("value23")),
+                SharedBufferValue::Insert(Bytes::from("value23")),
             ),
             (
                 iterator_test_table_key_of(3),
-                HummockValue::put(Bytes::from("value33")),
+                SharedBufferValue::Insert(Bytes::from("value33")),
             ),
         ];
         let epoch = 3;

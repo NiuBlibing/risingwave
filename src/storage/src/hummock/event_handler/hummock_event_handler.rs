@@ -889,10 +889,11 @@ mod tests {
     use crate::hummock::event_handler::{HummockEvent, HummockEventHandler, HummockVersionUpdate};
     use crate::hummock::iterator::test_utils::mock_sstable_store;
     use crate::hummock::local_version::pinned_version::PinnedVersion;
-    use crate::hummock::shared_buffer::shared_buffer_batch::SharedBufferBatch;
+    use crate::hummock::shared_buffer::shared_buffer_batch::{
+        SharedBufferBatch, SharedBufferValue,
+    };
     use crate::hummock::store::version::{StagingData, VersionUpdate};
     use crate::hummock::test_utils::default_opts_for_test;
-    use crate::hummock::value::HummockValue;
     use crate::hummock::HummockError;
     use crate::monitor::HummockStateStoreMetrics;
 
@@ -964,7 +965,7 @@ mod tests {
             SharedBufferBatch::build_shared_buffer_batch(
                 epoch,
                 spill_offset,
-                vec![(TableKey(Bytes::from("key")), HummockValue::Delete)],
+                vec![(TableKey(Bytes::from("key")), SharedBufferValue::Delete)],
                 10,
                 table_id,
                 instance_id,

@@ -33,7 +33,7 @@ use crate::hummock::iterator::{
     UserIterator,
 };
 use crate::hummock::shared_buffer::shared_buffer_batch::{
-    SharedBufferBatch, SharedBufferBatchIterator,
+    SharedBufferBatch, SharedBufferBatchIterator, SharedBufferItem, SharedBufferValue,
 };
 use crate::hummock::store::version::{read_filter_for_local, HummockVersionReader};
 use crate::hummock::utils::{
@@ -44,7 +44,6 @@ use crate::hummock::write_limiter::WriteLimiterRef;
 use crate::hummock::{MemoryLimiter, SstableIterator};
 use crate::mem_table::{KeyOp, MemTable, MemTableHummockIterator};
 use crate::monitor::{HummockStateStoreMetrics, IterLocalMetricsGuard, StoreLocalStatistic};
-use crate::storage_value::StorageValue;
 use crate::store::*;
 
 /// `LocalHummockStorage` is a handle for a state table shard to access data from and write data to
@@ -304,7 +303,7 @@ impl LocalStateStore for LocalHummockStorage {
                         )
                         .await?;
                     }
-                    kv_pairs.push((key, StorageValue::new_put(value)));
+                    kv_pairs.push((key, SharedBufferValue::Insert(value)));
                 }
                 KeyOp::Delete(old_value) => {
                     if ENABLE_SANITY_CHECK {
@@ -319,7 +318,7 @@ impl LocalStateStore for LocalHummockStorage {
                         )
                         .await?;
                     }
-                    kv_pairs.push((key, StorageValue::new_delete()));
+                    kv_pairs.push((key, SharedBufferValue::Delete));
                 }
                 KeyOp::Update((old_value, new_value)) => {
                     if ENABLE_SANITY_CHECK {
@@ -335,7 +334,7 @@ impl LocalStateStore for LocalHummockStorage {
                         )
                         .await?;
                     }
-                    kv_pairs.push((key, StorageValue::new_put(new_value)));
+                    kv_pairs.push((key, SharedBufferValue::Update(new_value)));
                 }
             }
         }
@@ -432,7 +431,7 @@ impl LocalStateStore for LocalHummockStorage {
 impl LocalHummockStorage {
     async fn flush_inner(
         &mut self,
-        kv_pairs: Vec<(TableKey<Bytes>, StorageValue)>,
+        sorted_items: Vec<SharedBufferItem>,
         write_options: WriteOptions,
     ) -> StorageResult<usize> {
         let epoch = write_options.epoch;
@@ -442,15 +441,14 @@ impl LocalHummockStorage {
         self.stats
             .write_batch_tuple_counts
             .with_label_values(&[table_id_label.as_str()])
-            .inc_by(kv_pairs.len() as _);
+            .inc_by(sorted_items.len() as _);
         let timer = self
             .stats
             .write_batch_duration
             .with_label_values(&[table_id_label.as_str()])
             .start_timer();
 
-        let imm_size = if !kv_pairs.is_empty() {
-            let sorted_items = SharedBufferBatch::build_shared_buffer_item_batches(kv_pairs);
+        let imm_size = if !sorted_items.is_empty() {
             let size = SharedBufferBatch::measure_batch_size(&sorted_items);
             self.write_limiter.wait_permission(self.table_id).await;
             let limiter = self.memory_limiter.as_ref();
