@@ -24,7 +24,7 @@ use risingwave_common::cache::CachePriority;
 use risingwave_common::catalog::TableId;
 use risingwave_common::hash::VirtualNode;
 use risingwave_hummock_sdk::compaction_group::StaticCompactionGroupId;
-use risingwave_hummock_sdk::key::{FullKey, FullKeyTracker, UserKey};
+use risingwave_hummock_sdk::key::{FullKey, FullKeyTracker, UserKey, EPOCH_LEN};
 use risingwave_hummock_sdk::key_range::KeyRange;
 use risingwave_hummock_sdk::{CompactionGroupId, EpochWithGap, HummockEpoch, LocalSstableInfo};
 use risingwave_pb::hummock::compact_task;
@@ -146,7 +146,7 @@ async fn compact_shared_buffer(
         ret
     });
 
-    let total_key_count = payload.iter().map(|imm| imm.kv_count()).sum::<usize>();
+    let total_key_count = payload.iter().map(|imm| imm.key_count()).sum::<usize>();
     let (splits, sub_compaction_sstable_size, split_weight_by_vnode) =
         generate_splits(&payload, &existing_table_ids, context.storage_opts.as_ref());
     let parallelism = splits.len();
@@ -290,18 +290,16 @@ pub async fn merge_imms_in_memory(
     assert!(imms.iter().rev().map(|imm| imm.batch_id()).is_sorted());
     let max_imm_id = imms[0].batch_id();
 
-    let has_old_value = imms[0].inner.has_old_value();
-    let key_count = imms.iter().map(|imm| imm.inner.key_count()).sum();
-    let value_count = imms.iter().map(|imm| imm.inner.value_count()).sum();
+    let has_old_value = imms[0].has_old_value();
     // TODO: make sure that the corner case on switch_op_consistency is handled
     // If the imm of a table id contains old value, all other imm of the same table id should have old value
-    assert!(imms
-        .iter()
-        .all(|imm| imm.inner.has_old_value() == has_old_value));
+    assert!(imms.iter().all(|imm| imm.has_old_value() == has_old_value));
 
     let mut imm_iters = Vec::with_capacity(imms.len());
+    let key_count = imms.iter().map(|imm| imm.key_count()).sum();
+    let value_count = imms.iter().map(|imm| imm.value_count()).sum();
     for imm in imms {
-        assert!(imm.kv_count() > 0, "imm should not be empty");
+        assert!(imm.key_count() > 0, "imm should not be empty");
         assert_eq!(
             table_id,
             imm.table_id(),
@@ -400,7 +398,7 @@ fn generate_splits(
     for imm in payload {
         let data_size = {
             // calculate encoded bytes of key var length
-            (imm.kv_count() * 8 + imm.size()) as u64
+            (imm.value_count() * EPOCH_LEN + imm.size()) as u64
         };
         compact_data_size += data_size;
         size_and_start_user_keys.push((data_size, imm.start_user_key()));

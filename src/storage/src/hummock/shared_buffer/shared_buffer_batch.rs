@@ -211,18 +211,6 @@ impl SharedBufferBatchInner {
 
         None
     }
-
-    pub fn has_old_value(&self) -> bool {
-        self.old_values.is_some()
-    }
-
-    pub fn key_count(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn value_count(&self) -> usize {
-        self.new_values.len()
-    }
 }
 
 impl PartialEq for SharedBufferBatchInner {
@@ -332,8 +320,16 @@ impl SharedBufferBatch {
         *self.inner.epochs.last().unwrap()
     }
 
-    pub fn kv_count(&self) -> usize {
+    pub fn key_count(&self) -> usize {
+        self.inner.entries.len()
+    }
+
+    pub fn value_count(&self) -> usize {
         self.inner.new_values.len()
+    }
+
+    pub fn has_old_value(&self) -> bool {
+        self.inner.old_values.is_some()
     }
 
     pub fn get(
