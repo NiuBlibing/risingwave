@@ -23,7 +23,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use prometheus::core::{AtomicU64, GenericGauge};
 use risingwave_hummock_sdk::compaction_group::hummock_version_ext::SstDeltaInfo;
-use risingwave_hummock_sdk::{HummockEpoch, LocalSstableInfo};
+use risingwave_hummock_sdk::HummockEpoch;
 use thiserror_ext::AsReport;
 use tokio::spawn;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -38,7 +38,7 @@ use crate::hummock::conflict_detector::ConflictDetector;
 use crate::hummock::event_handler::refiller::{CacheRefillerEvent, SpawnRefillTask};
 use crate::hummock::event_handler::uploader::{
     default_spawn_merging_task, HummockUploader, SpawnMergingTask, SpawnUploadTask, SyncedData,
-    UploadTaskInfo, UploadTaskPayload, UploaderEvent,
+    UploadTaskInfo, UploadTaskOutput, UploadTaskPayload, UploaderEvent,
 };
 use crate::hummock::event_handler::{
     HummockEvent, HummockReadVersionRef, HummockVersionUpdate, ReadOnlyReadVersionMapping,
@@ -145,7 +145,7 @@ async fn flush_imms(
     compactor_context: CompactorContext,
     filter_key_extractor_manager: FilterKeyExtractorManager,
     sstable_object_id_manager: Arc<SstableObjectIdManager>,
-) -> HummockResult<Vec<LocalSstableInfo>> {
+) -> HummockResult<UploadTaskOutput> {
     for epoch in &task_info.epochs {
         let _ = sstable_object_id_manager
             .add_watermark_object_id(Some(*epoch))
@@ -856,6 +856,13 @@ fn to_sync_result(result: &HummockResult<SyncedData>) -> HummockResult<SyncResul
                     .flat_map(|staging_sstable_info| staging_sstable_info.sstable_infos().clone())
                     .collect(),
                 table_watermarks: sync_data.table_watermarks.clone(),
+                old_value_ssts: sync_data
+                    .staging_ssts
+                    .iter()
+                    .flat_map(|staging_sstable_info| {
+                        staging_sstable_info.old_value_sstable_infos().clone()
+                    })
+                    .collect(),
             })
         }
         Err(e) => Err(HummockError::other(format!(

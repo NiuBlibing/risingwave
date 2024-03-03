@@ -51,7 +51,7 @@ use crate::opts::StorageOpts;
 
 pub type UploadTaskPayload = Vec<ImmutableMemtable>;
 
-pub type UploadTaskOutput = Vec<LocalSstableInfo>;
+pub type UploadTaskOutput = (Vec<LocalSstableInfo>, Vec<LocalSstableInfo>);
 pub type SpawnUploadTask = Arc<
     dyn Fn(UploadTaskPayload, UploadTaskInfo) -> JoinHandle<HummockResult<UploadTaskOutput>>
         + Send
@@ -255,9 +255,9 @@ impl UploadingTask {
                     }
                 })
                 .inspect_err(|e| error!(task_info = ?self.task_info, err = ?e.as_report(), "upload task failed"))
-                .map(|ssts| {
+                .map(|output| {
                     StagingSstableInfo::new(
-                        ssts,
+                        output,
                         self.task_info.epochs.clone(),
                         self.task_info.imm_ids.clone(),
                         self.task_info.task_size,
@@ -1322,15 +1322,15 @@ mod tests {
         )
     }
 
-    fn dummy_success_upload_output() -> Vec<LocalSstableInfo> {
-        gen_sstable_info(INITIAL_EPOCH, INITIAL_EPOCH)
+    fn dummy_success_upload_output() -> UploadTaskOutput {
+        (gen_sstable_info(INITIAL_EPOCH, INITIAL_EPOCH), vec![])
     }
 
     #[allow(clippy::unused_async)]
     async fn dummy_success_upload_future(
         _: UploadTaskPayload,
         _: UploadTaskInfo,
-    ) -> HummockResult<Vec<LocalSstableInfo>> {
+    ) -> HummockResult<UploadTaskOutput> {
         Ok(dummy_success_upload_output())
     }
 
@@ -1338,7 +1338,7 @@ mod tests {
     async fn dummy_fail_upload_future(
         _: UploadTaskPayload,
         _: UploadTaskInfo,
-    ) -> HummockResult<Vec<LocalSstableInfo>> {
+    ) -> HummockResult<UploadTaskOutput> {
         Err(HummockError::other("failed"))
     }
 
@@ -1353,7 +1353,10 @@ mod tests {
         assert_eq!(vec![imm_id], task.task_info.imm_ids);
         assert_eq!(vec![INITIAL_EPOCH as HummockEpoch], task.task_info.epochs);
         let output = task.await.unwrap();
-        assert_eq!(output.sstable_infos(), &dummy_success_upload_output());
+        assert_eq!(
+            (output.sstable_infos().clone(), vec![]),
+            dummy_success_upload_output()
+        );
         assert_eq!(imm_size, output.imm_size());
         assert_eq!(&vec![imm_id], output.imm_ids());
         assert_eq!(&vec![INITIAL_EPOCH as HummockEpoch], output.epochs());
@@ -1368,7 +1371,10 @@ mod tests {
         let uploader_context = test_uploader_context(dummy_success_upload_future);
         let mut task = UploadingTask::new(vec![gen_imm(INITIAL_EPOCH).await], &uploader_context);
         let output = poll_fn(|cx| task.poll_result(cx)).await.unwrap();
-        assert_eq!(output.sstable_infos(), &dummy_success_upload_output());
+        assert_eq!(
+            (output.sstable_infos().clone(), vec![]),
+            dummy_success_upload_output()
+        );
 
         let uploader_context = test_uploader_context(dummy_fail_upload_future);
         let mut task = UploadingTask::new(vec![gen_imm(INITIAL_EPOCH).await], &uploader_context);
@@ -1396,7 +1402,10 @@ mod tests {
         let mut task = UploadingTask::new(vec![gen_imm(INITIAL_EPOCH).await], &uploader_context);
         let output = poll_fn(|cx| task.poll_ok_with_retry(cx)).await;
         assert_eq!(fail_num + 1, run_count_clone.load(SeqCst));
-        assert_eq!(output.sstable_infos(), &dummy_success_upload_output());
+        assert_eq!(
+            (output.sstable_infos().clone(), vec![]),
+            dummy_success_upload_output()
+        );
     }
 
     #[tokio::test]
@@ -1442,7 +1451,10 @@ mod tests {
                 let staging_sst = ssts.first().unwrap();
                 assert_eq!(&vec![epoch1], staging_sst.epochs());
                 assert_eq!(&vec![imm.batch_id()], staging_sst.imm_ids());
-                assert_eq!(&dummy_success_upload_output(), staging_sst.sstable_infos());
+                assert_eq!(
+                    &dummy_success_upload_output().0,
+                    staging_sst.sstable_infos()
+                );
             }
             _ => unreachable!(),
         };
@@ -1453,7 +1465,10 @@ mod tests {
         let staging_sst = ssts.first().unwrap();
         assert_eq!(&vec![epoch1], staging_sst.epochs());
         assert_eq!(&vec![imm.batch_id()], staging_sst.imm_ids());
-        assert_eq!(&dummy_success_upload_output(), staging_sst.sstable_infos());
+        assert_eq!(
+            &dummy_success_upload_output().0,
+            staging_sst.sstable_infos()
+        );
 
         let new_pinned_version = uploader
             .context
@@ -1789,7 +1804,7 @@ mod tests {
                         let ret = gen_sstable_info(start_epoch, end_epoch);
                         start_tx.send(task_info).unwrap();
                         finish_rx.await.unwrap();
-                        Ok(ret)
+                        Ok((ret, vec![]))
                     })
                 }
             }),

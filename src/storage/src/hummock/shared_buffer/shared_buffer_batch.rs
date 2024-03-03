@@ -379,22 +379,22 @@ impl SharedBufferBatch {
             .is_ok()
     }
 
-    fn into_iter<D: HummockIteratorDirection, const IS_NEW_VALUE: bool>(
+    pub fn into_directed_iter<D: HummockIteratorDirection, const IS_NEW_VALUE: bool>(
         self,
     ) -> SharedBufferBatchIterator<D, IS_NEW_VALUE> {
         SharedBufferBatchIterator::<D, IS_NEW_VALUE>::new(self.inner, self.table_id)
     }
 
     pub fn into_old_value_iter(self) -> SharedBufferBatchIterator<Forward, false> {
-        self.into_iter()
+        self.into_directed_iter()
     }
 
     pub fn into_forward_iter(self) -> SharedBufferBatchIterator<Forward> {
-        self.into_iter()
+        self.into_directed_iter()
     }
 
     pub fn into_backward_iter(self) -> SharedBufferBatchIterator<Backward> {
-        self.into_iter()
+        self.into_directed_iter()
     }
 
     #[inline(always)]

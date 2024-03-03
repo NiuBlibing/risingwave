@@ -41,6 +41,7 @@ use tracing::Instrument;
 
 use super::StagingDataIterator;
 use crate::error::StorageResult;
+use crate::hummock::event_handler::uploader::UploadTaskOutput;
 use crate::hummock::event_handler::HummockReadVersionRef;
 use crate::hummock::iterator::{
     ConcatIterator, ForwardMergeRangeIterator, HummockIteratorUnion, MergeIterator,
@@ -75,6 +76,7 @@ pub type CommittedVersion = PinnedVersion;
 pub struct StagingSstableInfo {
     // newer data comes first
     sstable_infos: Vec<LocalSstableInfo>,
+    old_value_sstable_infos: Vec<LocalSstableInfo>,
     /// Epochs whose data are included in the Sstable. The newer epoch comes first.
     /// The field must not be empty.
     epochs: Vec<HummockEpoch>,
@@ -84,7 +86,7 @@ pub struct StagingSstableInfo {
 
 impl StagingSstableInfo {
     pub fn new(
-        sstable_infos: Vec<LocalSstableInfo>,
+        (sstable_infos, old_value_sstable_infos): UploadTaskOutput,
         epochs: Vec<HummockEpoch>,
         imm_ids: Vec<ImmId>,
         imm_size: usize,
@@ -93,6 +95,7 @@ impl StagingSstableInfo {
         assert!(epochs.is_sorted_by(|epoch1, epoch2| epoch2.partial_cmp(epoch1)));
         Self {
             sstable_infos,
+            old_value_sstable_infos,
             epochs,
             imm_ids,
             imm_size,
@@ -101,6 +104,10 @@ impl StagingSstableInfo {
 
     pub fn sstable_infos(&self) -> &Vec<LocalSstableInfo> {
         &self.sstable_infos
+    }
+
+    pub fn old_value_sstable_infos(&self) -> &Vec<LocalSstableInfo> {
+        &self.old_value_sstable_infos
     }
 
     pub fn imm_size(&self) -> usize {

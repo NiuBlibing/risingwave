@@ -140,40 +140,43 @@ async fn test_read_version_basic() {
             .collect::<Vec<_>>();
 
         let dummy_sst = StagingSstableInfo::new(
-            vec![
-                LocalSstableInfo::for_test(SstableInfo {
-                    object_id: 1,
-                    sst_id: 1,
-                    key_range: Some(KeyRange {
-                        left: key_with_epoch(iterator_test_user_key_of(1).encode(), 1),
-                        right: key_with_epoch(iterator_test_user_key_of(2).encode(), 2),
-                        right_exclusive: false,
+            (
+                vec![
+                    LocalSstableInfo::for_test(SstableInfo {
+                        object_id: 1,
+                        sst_id: 1,
+                        key_range: Some(KeyRange {
+                            left: key_with_epoch(iterator_test_user_key_of(1).encode(), 1),
+                            right: key_with_epoch(iterator_test_user_key_of(2).encode(), 2),
+                            right_exclusive: false,
+                        }),
+                        file_size: 1,
+                        table_ids: vec![0],
+                        meta_offset: 1,
+                        stale_key_count: 1,
+                        total_key_count: 1,
+                        uncompressed_file_size: 1,
+                        ..Default::default()
                     }),
-                    file_size: 1,
-                    table_ids: vec![0],
-                    meta_offset: 1,
-                    stale_key_count: 1,
-                    total_key_count: 1,
-                    uncompressed_file_size: 1,
-                    ..Default::default()
-                }),
-                LocalSstableInfo::for_test(SstableInfo {
-                    object_id: 2,
-                    sst_id: 2,
-                    key_range: Some(KeyRange {
-                        left: key_with_epoch(iterator_test_user_key_of(3).encode(), 3),
-                        right: key_with_epoch(iterator_test_user_key_of(3).encode(), 3),
-                        right_exclusive: false,
+                    LocalSstableInfo::for_test(SstableInfo {
+                        object_id: 2,
+                        sst_id: 2,
+                        key_range: Some(KeyRange {
+                            left: key_with_epoch(iterator_test_user_key_of(3).encode(), 3),
+                            right: key_with_epoch(iterator_test_user_key_of(3).encode(), 3),
+                            right_exclusive: false,
+                        }),
+                        file_size: 1,
+                        table_ids: vec![0],
+                        meta_offset: 1,
+                        stale_key_count: 1,
+                        total_key_count: 1,
+                        uncompressed_file_size: 1,
+                        ..Default::default()
                     }),
-                    file_size: 1,
-                    table_ids: vec![0],
-                    meta_offset: 1,
-                    stale_key_count: 1,
-                    total_key_count: 1,
-                    uncompressed_file_size: 1,
-                    ..Default::default()
-                }),
-            ],
+                ],
+                vec![],
+            ),
             epoch_id_vec_for_clear,
             batch_id_vec_for_clear,
             1,
@@ -376,7 +379,10 @@ async fn test_read_filter_for_batch_issue_14659() {
     read_version_vec.iter().for_each(|v| {
         v.write().update(VersionUpdate::Staging(StagingData::Sst(
             StagingSstableInfo::new(
-                vec![LocalSstableInfo::for_test(staging_sst.clone())],
+                (
+                    vec![LocalSstableInfo::for_test(staging_sst.clone())],
+                    vec![],
+                ),
                 vec![epoch],
                 imms.iter().map(|imm| imm.batch_id()).collect_vec(),
                 imms.iter().map(|imm| imm.size()).sum(),

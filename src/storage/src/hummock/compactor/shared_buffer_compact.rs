@@ -17,7 +17,7 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::future::try_join_all;
+use futures::future::{try_join, try_join_all};
 use futures::{stream, StreamExt, TryFutureExt};
 use itertools::Itertools;
 use risingwave_common::cache::CachePriority;
@@ -35,7 +35,7 @@ use crate::filter_key_extractor::{FilterKeyExtractorImpl, FilterKeyExtractorMana
 use crate::hummock::compactor::compaction_filter::DummyCompactionFilter;
 use crate::hummock::compactor::context::CompactorContext;
 use crate::hummock::compactor::{check_flush_result, CompactOutput, Compactor};
-use crate::hummock::event_handler::uploader::UploadTaskPayload;
+use crate::hummock::event_handler::uploader::{UploadTaskOutput, UploadTaskPayload};
 use crate::hummock::event_handler::LocalInstanceId;
 use crate::hummock::iterator::{
     Forward, ForwardMergeRangeIterator, HummockIterator, MergeIterator, UserIterator,
@@ -61,9 +61,9 @@ pub async fn compact(
     payload: UploadTaskPayload,
     compaction_group_index: Arc<HashMap<TableId, CompactionGroupId>>,
     filter_key_extractor_manager: FilterKeyExtractorManager,
-) -> HummockResult<Vec<LocalSstableInfo>> {
+) -> HummockResult<UploadTaskOutput> {
     let mut grouped_payload: HashMap<CompactionGroupId, UploadTaskPayload> = HashMap::new();
-    for imm in payload {
+    for imm in &payload {
         let compaction_group_id = match compaction_group_index.get(&imm.table_id) {
             // compaction group id is used only as a hint for grouping different data.
             // If the compaction group id is not found for the table id, we can assign a
@@ -78,14 +78,14 @@ pub async fn compact(
         grouped_payload
             .entry(compaction_group_id)
             .or_default()
-            .push(imm);
+            .push(imm.clone());
     }
 
-    let mut futures = vec![];
+    let mut new_value_futures = vec![];
     for (id, group_payload) in grouped_payload {
         let id_copy = id;
-        futures.push(
-            compact_shared_buffer(
+        new_value_futures.push(
+            compact_shared_buffer::<true>(
                 context.clone(),
                 sstable_object_id_manager.clone(),
                 filter_key_extractor_manager.clone(),
@@ -102,22 +102,37 @@ pub async fn compact(
             }),
         );
     }
-    // Note that the output is reordered compared with input `payload`.
-    let result = try_join_all(futures)
-        .await?
+
+    let old_value_payload = payload
         .into_iter()
-        .flatten()
+        .filter(|imm| imm.has_old_value())
         .collect_vec();
-    Ok(result)
+
+    let old_value_future = compact_shared_buffer::<false>(
+        context.clone(),
+        sstable_object_id_manager,
+        filter_key_extractor_manager,
+        old_value_payload,
+    );
+
+    // Note that the output is reordered compared with input `payload`.
+    let (grouped_new_value_ssts, old_value_ssts) =
+        try_join(try_join_all(new_value_futures), old_value_future).await?;
+
+    let new_value_ssts = grouped_new_value_ssts.into_iter().flatten().collect_vec();
+    Ok((new_value_ssts, old_value_ssts))
 }
 
 /// For compaction from shared buffer to level 0, this is the only function gets called.
-async fn compact_shared_buffer(
+async fn compact_shared_buffer<const IS_NEW_VALUE: bool>(
     context: CompactorContext,
     sstable_object_id_manager: SstableObjectIdManagerRef,
     filter_key_extractor_manager: FilterKeyExtractorManager,
     mut payload: UploadTaskPayload,
 ) -> HummockResult<Vec<LocalSstableInfo>> {
+    if !IS_NEW_VALUE {
+        assert!(payload.iter().all(|imm| imm.has_old_value()));
+    }
     // Local memory compaction looks at all key ranges.
 
     let mut existing_table_ids: HashSet<u32> = payload
@@ -175,7 +190,7 @@ async fn compact_shared_buffer(
         );
         let mut forward_iters = Vec::with_capacity(payload.len());
         for imm in &payload {
-            forward_iters.push(imm.clone().into_forward_iter());
+            forward_iters.push(imm.clone().into_directed_iter::<Forward, IS_NEW_VALUE>());
         }
         let compaction_executor = context.compaction_executor.clone();
         let multi_filter_key_extractor = multi_filter_key_extractor.clone();
