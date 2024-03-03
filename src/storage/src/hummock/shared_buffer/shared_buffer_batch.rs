@@ -40,11 +40,21 @@ use crate::hummock::{HummockEpoch, HummockResult, MonotonicDeleteEvent};
 use crate::mem_table::ImmId;
 use crate::store::ReadOptions;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SharedBufferValue<T> {
     Insert(T),
     Update(T),
     Delete,
+}
+
+impl<T> SharedBufferValue<T> {
+    fn to_ref(&self) -> SharedBufferValue<&T> {
+        match self {
+            SharedBufferValue::Insert(val) => SharedBufferValue::Insert(val),
+            SharedBufferValue::Update(val) => SharedBufferValue::Update(val),
+            SharedBufferValue::Delete => SharedBufferValue::Delete,
+        }
+    }
 }
 
 impl<T> From<SharedBufferValue<T>> for HummockValue<T> {
@@ -58,8 +68,8 @@ impl<T> From<SharedBufferValue<T>> for HummockValue<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> SharedBufferValue<T> {
-    pub(crate) fn as_slice(&self) -> SharedBufferValue<&[u8]> {
+impl<'a, T: AsRef<[u8]>> SharedBufferValue<&'a T> {
+    pub(crate) fn to_slice(self) -> SharedBufferValue<&'a [u8]> {
         match self {
             SharedBufferValue::Insert(val) => SharedBufferValue::Insert(val.as_ref()),
             SharedBufferValue::Update(val) => SharedBufferValue::Update(val.as_ref()),
@@ -369,16 +379,22 @@ impl SharedBufferBatch {
             .is_ok()
     }
 
-    pub fn into_directed_iter<D: HummockIteratorDirection>(self) -> SharedBufferBatchIterator<D> {
-        SharedBufferBatchIterator::<D>::new(self.inner, self.table_id)
+    fn into_iter<D: HummockIteratorDirection, const IS_NEW_VALUE: bool>(
+        self,
+    ) -> SharedBufferBatchIterator<D, IS_NEW_VALUE> {
+        SharedBufferBatchIterator::<D, IS_NEW_VALUE>::new(self.inner, self.table_id)
+    }
+
+    pub fn into_old_value_iter(self) -> SharedBufferBatchIterator<Forward, false> {
+        self.into_iter()
     }
 
     pub fn into_forward_iter(self) -> SharedBufferBatchIterator<Forward> {
-        self.into_directed_iter()
+        self.into_iter()
     }
 
     pub fn into_backward_iter(self) -> SharedBufferBatchIterator<Backward> {
-        self.into_directed_iter()
+        self.into_iter()
     }
 
     #[inline(always)]
@@ -490,7 +506,7 @@ impl SharedBufferBatch {
 
 /// Iterate all the items in the shared buffer batch
 /// If there are multiple versions of a key, the iterator will return all versions
-pub struct SharedBufferBatchIterator<D: HummockIteratorDirection> {
+pub struct SharedBufferBatchIterator<D: HummockIteratorDirection, const IS_NEW_VALUE: bool = true> {
     inner: Arc<SharedBufferBatchInner>,
     current_value_idx: i32,
     // The index of the current entry in the payload
@@ -499,8 +515,17 @@ pub struct SharedBufferBatchIterator<D: HummockIteratorDirection> {
     _phantom: PhantomData<D>,
 }
 
-impl<D: HummockIteratorDirection> SharedBufferBatchIterator<D> {
+impl<D: HummockIteratorDirection, const IS_NEW_VALUE: bool>
+    SharedBufferBatchIterator<D, IS_NEW_VALUE>
+{
     pub(crate) fn new(inner: Arc<SharedBufferBatchInner>, table_id: TableId) -> Self {
+        if !IS_NEW_VALUE {
+            assert!(
+                inner.old_values.is_some(),
+                "create old value iter with no old value: {:?}",
+                table_id
+            );
+        }
         Self {
             inner,
             current_idx: 0,
@@ -528,9 +553,9 @@ impl<D: HummockIteratorDirection> SharedBufferBatchIterator<D> {
         }
     }
 
-    pub(crate) fn current_item(
+    pub(crate) fn current_key_value(
         &self,
-    ) -> (&TableKey<Bytes>, &(EpochWithGap, SharedBufferValue<Bytes>)) {
+    ) -> (&TableKey<Bytes>, (EpochWithGap, SharedBufferValue<&Bytes>)) {
         let (idx, value_idx) = match D::direction() {
             DirectionEnum::Forward => (self.current_idx, self.current_value_idx),
             DirectionEnum::Backward => (
@@ -539,9 +564,22 @@ impl<D: HummockIteratorDirection> SharedBufferBatchIterator<D> {
             ),
         };
         let cur_entry = &self.inner.entries[idx];
+        let key = &cur_entry.key;
+        let value_idx = cur_entry.value_offset + value_idx as usize;
+        let (epoch_with_gap, new_value) = &self.inner.new_values[value_idx];
         (
-            &cur_entry.key,
-            &self.inner.new_values[cur_entry.value_offset + value_idx as usize],
+            key,
+            (
+                *epoch_with_gap,
+                if IS_NEW_VALUE {
+                    new_value.to_ref()
+                } else {
+                    // for old value of log store, the value is always treated as insert
+                    SharedBufferValue::Insert(
+                        &self.inner.old_values.as_ref().expect("must exist")[value_idx],
+                    )
+                },
+            ),
         )
     }
 }
@@ -567,7 +605,9 @@ impl SharedBufferBatchIterator<Forward> {
     }
 }
 
-impl<D: HummockIteratorDirection> HummockIterator for SharedBufferBatchIterator<D> {
+impl<D: HummockIteratorDirection, const IS_NEW_VALUE: bool> HummockIterator
+    for SharedBufferBatchIterator<D, IS_NEW_VALUE>
+{
     type Direction = D;
 
     async fn next(&mut self) -> HummockResult<()> {
@@ -595,13 +635,13 @@ impl<D: HummockIteratorDirection> HummockIterator for SharedBufferBatchIterator<
     }
 
     fn key(&self) -> FullKey<&[u8]> {
-        let (key, (epoch_with_gap, _)) = self.current_item();
-        FullKey::new_with_gap_epoch(self.table_id, TableKey(key), *epoch_with_gap)
+        let (key, (epoch_with_gap, _)) = self.current_key_value();
+        FullKey::new_with_gap_epoch(self.table_id, TableKey(key), epoch_with_gap)
     }
 
     fn value(&self) -> HummockValue<&[u8]> {
-        let (_, (_, value)) = self.current_item();
-        value.as_slice().into()
+        let (_, (_, value)) = self.current_key_value();
+        value.to_slice().into()
     }
 
     fn is_valid(&self) -> bool {
