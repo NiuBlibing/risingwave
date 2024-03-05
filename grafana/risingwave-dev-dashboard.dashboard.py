@@ -267,7 +267,6 @@ def section_compaction(outer_panels):
                             "compactor_task_count - {{%s}} @ {{%s}}"
                             % (COMPONENT_LABEL, NODE_LABEL),
                         ),
-
                         panels.target(
                             f"avg({metric('storage_compact_task_pending_parallelism')}) by({COMPONENT_LABEL}, {NODE_LABEL})",
                             "compactor_task_pending_parallelism - {{%s}} @ {{%s}}"
@@ -839,7 +838,7 @@ def section_streaming(outer_panels):
                             f"rate({table_metric('stream_arrangement_backfill_snapshot_read_row_count')}[$__rate_interval])",
                             "table_id={{table_id}} actor={{actor_id}} @ {{%s}}"
                             % NODE_LABEL,
-                            ),
+                        ),
                     ],
                 ),
                 panels.timeseries_rowsps(
@@ -850,7 +849,7 @@ def section_streaming(outer_panels):
                             f"rate({table_metric('stream_arrangement_backfill_upstream_output_row_count')}[$__rate_interval])",
                             "table_id={{table_id}} actor={{actor_id}} @ {{%s}}"
                             % NODE_LABEL,
-                            ),
+                        ),
                     ],
                 ),
                 panels.timeseries_count(
@@ -1662,7 +1661,7 @@ def section_streaming_exchange(outer_panels):
                     [
                         panels.target(
                             f"rate({metric('stream_exchange_frag_send_size')}[$__rate_interval])",
-                            "{{up_fragment_id}}->{{down_fragment_id}}",
+                            "fragment {{up_fragment_id}} -> fragment {{down_fragment_id}}",
                         ),
                     ],
                 ),
@@ -1672,7 +1671,27 @@ def section_streaming_exchange(outer_panels):
                     [
                         panels.target(
                             f"rate({metric('stream_exchange_frag_recv_size')}[$__rate_interval])",
-                            "{{up_fragment_id}}->{{down_fragment_id}}",
+                            "fragment {{up_fragment_id}} -> fragment {{down_fragment_id}}",
+                        ),
+                    ],
+                ),
+                panels.timeseries_bytes(
+                    "Actor-level Exchange Memory Size",
+                    "",
+                    [
+                        panels.target(
+                            f"{metric('stream_exchange_memory_size')}",
+                            "actor {{up_actor_id}} -> actor {{down_actor_id}}",
+                        ),
+                    ],
+                ),
+                panels.timeseries_count(
+                    "Actor-level Exchange Number of Rows",
+                    "",
+                    [
+                        panels.target(
+                            f"{metric('stream_exchange_num_rows')}",
+                            "actor {{up_actor_id}} -> actor {{down_actor_id}}",
                         ),
                     ],
                 ),
@@ -2539,8 +2558,7 @@ def section_hummock_tiered_cache(outer_panels):
                     [
                         panels.target(
                             f"sum(rate({metric('refill_bytes')}[$__rate_interval])) by (foyer, op, {NODE_LABEL})",
-                            "{{type}} file cache - {{op}} @ {{%s}}"
-                            % NODE_LABEL,
+                            "{{type}} file cache - {{op}} @ {{%s}}" % NODE_LABEL,
                         ),
                     ],
                 ),
@@ -2626,8 +2644,7 @@ def section_hummock_tiered_cache(outer_panels):
                     [
                         panels.target(
                             f"sum(rate({metric('refill_total', inheritance_parent_lookup_filter)}[$__rate_interval])) by (op, {NODE_LABEL})",
-                            "parent meta lookup {{op}} @ {{%s}}"
-                            % NODE_LABEL,
+                            "parent meta lookup {{op}} @ {{%s}}" % NODE_LABEL,
                         ),
                     ],
                 ),
@@ -2647,8 +2664,7 @@ def section_hummock_tiered_cache(outer_panels):
                     [
                         panels.target(
                             f"sum(rate({metric('refill_total', unit_inheritance_filter)}[$__rate_interval])) by (op, {NODE_LABEL})",
-                            "unit inheritance {{op}} @ {{%s}}"
-                            % NODE_LABEL,
+                            "unit inheritance {{op}} @ {{%s}}" % NODE_LABEL,
                         ),
                     ],
                 ),
@@ -2668,8 +2684,7 @@ def section_hummock_tiered_cache(outer_panels):
                     [
                         panels.target(
                             f"sum(rate({metric('refill_total', block_refill_filter)}[$__rate_interval])) by (op, {NODE_LABEL})",
-                            "block refill {{op}} @ {{%s}}"
-                            % NODE_LABEL,
+                            "block refill {{op}} @ {{%s}}" % NODE_LABEL,
                         ),
                     ],
                 ),
