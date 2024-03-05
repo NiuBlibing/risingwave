@@ -343,6 +343,11 @@ pub async fn merge_imms_in_memory(
         None
     };
 
+    merged_entries.push(SharedBufferKeyEntry {
+        key: first_item_key.clone(),
+        value_offset: 0,
+    });
+
     // Use first key, max epoch to initialize the tracker to ensure that the check first call to full_key_tracker.observe will succeed
     let mut full_key_tracker = FullKeyTracker::<Bytes>::new(FullKey::new_with_gap_epoch(
         table_id,
