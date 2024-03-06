@@ -45,6 +45,7 @@ use crate::hummock::write_limiter::WriteLimiterRef;
 use crate::hummock::{MemoryLimiter, SstableIterator};
 use crate::mem_table::{KeyOp, MemTable, MemTableHummockIterator};
 use crate::monitor::{HummockStateStoreMetrics, IterLocalMetricsGuard, StoreLocalStatistic};
+use crate::panic_store::PanicStateStoreStream;
 use crate::store::*;
 
 /// `LocalHummockStorage` is a handle for a state table shard to access data from and write data to
@@ -206,6 +207,7 @@ impl LocalHummockStorage {
 }
 
 impl StateStoreRead for LocalHummockStorage {
+    type ChangeLogStream = PanicStateStoreStream<StateStoreReadLogItem>;
     type IterStream = StreamTypeOfIter<HummockStorageIterator>;
 
     fn get(
@@ -227,6 +229,15 @@ impl StateStoreRead for LocalHummockStorage {
         assert!(epoch <= self.epoch());
         self.iter_flushed(key_range, epoch, read_options)
             .instrument(tracing::trace_span!("hummock_iter"))
+    }
+
+    async fn iter_log(
+        &self,
+        _epoch_range: (u64, u64),
+        _key_range: TableKeyRange,
+        _options: ReadLogOptions,
+    ) -> StorageResult<Self::ChangeLogStream> {
+        unimplemented!()
     }
 }
 

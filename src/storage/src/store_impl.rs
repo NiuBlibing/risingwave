@@ -211,6 +211,7 @@ pub mod verify {
     use risingwave_common::buffer::Bitmap;
     use risingwave_hummock_sdk::key::{TableKey, TableKeyRange};
     use risingwave_hummock_sdk::HummockReadEpoch;
+    use tonic::codegen::tokio_stream::Stream;
     use tracing::log::warn;
 
     use crate::error::{StorageError, StorageResult};
@@ -251,6 +252,7 @@ pub mod verify {
     }
 
     impl<A: StateStoreRead, E: StateStoreRead> StateStoreRead for VerifyStateStore<A, E> {
+        type ChangeLogStream = impl StateStoreReadLogStream;
         type IterStream = impl StateStoreReadIterStream;
 
         async fn get(
@@ -293,12 +295,31 @@ pub mod verify {
                 Ok(verify_stream(actual, expected))
             }
         }
+
+        async fn iter_log(
+            &self,
+            epoch_range: (u64, u64),
+            key_range: TableKeyRange,
+            options: ReadLogOptions,
+        ) -> StorageResult<Self::ChangeLogStream> {
+            let actual = self
+                .actual
+                .iter_log(epoch_range, key_range.clone(), options.clone())
+                .await?;
+            let expected = if let Some(expected) = &self.expected {
+                Some(expected.iter_log(epoch_range, key_range, options).await?)
+            } else {
+                None
+            };
+
+            Ok(verify_stream(actual, expected))
+        }
     }
 
-    #[try_stream(ok = StateStoreIterItem, error = StorageError)]
-    async fn verify_stream(
-        actual: impl StateStoreIterItemStream,
-        expected: Option<impl StateStoreIterItemStream>,
+    #[try_stream(ok = T, error = StorageError)]
+    async fn verify_stream<T: PartialEq + Debug>(
+        actual: impl Stream<Item = StorageResult<T>>,
+        expected: Option<impl Stream<Item = StorageResult<T>>>,
     ) {
         pin_mut!(actual);
         pin_mut!(expected);
@@ -712,6 +733,8 @@ pub mod boxed_state_store {
     // For StateStoreRead
 
     pub type BoxStateStoreReadIterStream = BoxStream<'static, StorageResult<StateStoreIterItem>>;
+    pub type BoxStateStoreReadChangeLogStream =
+        BoxStream<'static, StorageResult<StateStoreReadLogItem>>;
 
     #[async_trait::async_trait]
     pub trait DynamicDispatchedStateStoreRead: StaticSendSync {
@@ -728,6 +751,13 @@ pub mod boxed_state_store {
             epoch: u64,
             read_options: ReadOptions,
         ) -> StorageResult<BoxStateStoreReadIterStream>;
+
+        async fn iter_log(
+            &self,
+            epoch_range: (u64, u64),
+            key_range: TableKeyRange,
+            options: ReadLogOptions,
+        ) -> StorageResult<BoxStateStoreReadChangeLogStream>;
     }
 
     #[async_trait::async_trait]
@@ -748,6 +778,18 @@ pub mod boxed_state_store {
             read_options: ReadOptions,
         ) -> StorageResult<BoxStateStoreReadIterStream> {
             Ok(self.iter(key_range, epoch, read_options).await?.boxed())
+        }
+
+        async fn iter_log(
+            &self,
+            epoch_range: (u64, u64),
+            key_range: TableKeyRange,
+            options: ReadLogOptions,
+        ) -> StorageResult<BoxStateStoreReadChangeLogStream> {
+            Ok(self
+                .iter_log(epoch_range, key_range, options)
+                .await?
+                .boxed())
         }
     }
 
@@ -986,6 +1028,7 @@ pub mod boxed_state_store {
     pub type BoxDynamicDispatchedStateStore = Box<dyn DynamicDispatchedStateStore>;
 
     impl StateStoreRead for BoxDynamicDispatchedStateStore {
+        type ChangeLogStream = BoxStateStoreReadChangeLogStream;
         type IterStream = BoxStateStoreReadIterStream;
 
         fn get(
@@ -1004,6 +1047,15 @@ pub mod boxed_state_store {
             read_options: ReadOptions,
         ) -> impl Future<Output = StorageResult<Self::IterStream>> + '_ {
             self.deref().iter(key_range, epoch, read_options)
+        }
+
+        fn iter_log(
+            &self,
+            epoch_range: (u64, u64),
+            key_range: TableKeyRange,
+            options: ReadLogOptions,
+        ) -> impl Future<Output = StorageResult<Self::ChangeLogStream>> + Send + '_ {
+            self.deref().iter_log(epoch_range, key_range, options)
         }
     }
 

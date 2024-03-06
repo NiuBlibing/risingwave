@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::marker::PhantomData;
 use std::ops::Bound;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -33,7 +34,8 @@ use crate::store::*;
 pub struct PanicStateStore;
 
 impl StateStoreRead for PanicStateStore {
-    type IterStream = PanicStateStoreStream;
+    type ChangeLogStream = PanicStateStoreStream<StateStoreReadLogItem>;
+    type IterStream = PanicStateStoreStream<StateStoreIterItem>;
 
     #[allow(clippy::unused_async)]
     async fn get(
@@ -54,6 +56,15 @@ impl StateStoreRead for PanicStateStore {
     ) -> StorageResult<Self::IterStream> {
         panic!("should not read from the state store!");
     }
+
+    async fn iter_log(
+        &self,
+        _epoch_range: (u64, u64),
+        _key_range: TableKeyRange,
+        _options: ReadLogOptions,
+    ) -> StorageResult<Self::ChangeLogStream> {
+        unimplemented!()
+    }
 }
 
 impl StateStoreWrite for PanicStateStore {
@@ -68,7 +79,7 @@ impl StateStoreWrite for PanicStateStore {
 }
 
 impl LocalStateStore for PanicStateStore {
-    type IterStream<'a> = PanicStateStoreStream;
+    type IterStream<'a> = PanicStateStoreStream<StateStoreIterItem>;
 
     #[allow(clippy::unused_async)]
     async fn may_exist(
@@ -174,10 +185,12 @@ impl StateStore for PanicStateStore {
     }
 }
 
-pub struct PanicStateStoreStream {}
+pub struct PanicStateStoreStream<T> {
+    _phantom: PhantomData<T>,
+}
 
-impl Stream for PanicStateStoreStream {
-    type Item = StorageResult<StateStoreIterItem>;
+impl<T> Stream for PanicStateStoreStream<T> {
+    type Item = StorageResult<T>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         panic!("should not call next on panic state store stream")

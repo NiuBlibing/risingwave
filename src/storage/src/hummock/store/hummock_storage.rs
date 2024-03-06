@@ -399,6 +399,7 @@ impl HummockStorage {
 }
 
 impl StateStoreRead for HummockStorage {
+    type ChangeLogStream = PanicStateStoreStream<StateStoreReadLogItem>;
     type IterStream = StreamTypeOfIter<HummockStorageIterator>;
 
     fn get(
@@ -417,6 +418,15 @@ impl StateStoreRead for HummockStorage {
         read_options: ReadOptions,
     ) -> impl Future<Output = StorageResult<Self::IterStream>> + '_ {
         self.iter_inner(key_range, epoch, read_options)
+    }
+
+    async fn iter_log(
+        &self,
+        _epoch_range: (u64, u64),
+        _key_range: TableKeyRange,
+        _options: ReadLogOptions,
+    ) -> StorageResult<Self::ChangeLogStream> {
+        unimplemented!()
     }
 }
 
@@ -520,6 +530,8 @@ impl StateStore for HummockStorage {
 
 #[cfg(any(test, feature = "test"))]
 use risingwave_hummock_sdk::version::HummockVersion;
+
+use crate::panic_store::PanicStateStoreStream;
 
 #[cfg(any(test, feature = "test"))]
 impl HummockStorage {

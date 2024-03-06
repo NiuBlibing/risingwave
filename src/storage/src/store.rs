@@ -26,7 +26,7 @@ use prost::Message;
 use risingwave_common::buffer::Bitmap;
 use risingwave_common::catalog::{TableId, TableOption};
 use risingwave_common::util::epoch::{Epoch, EpochPair};
-use risingwave_hummock_sdk::key::{FullKey, TableKey, TableKeyRange};
+use risingwave_hummock_sdk::key::{FullKey, TableKey, TableKeyRange, UserKey};
 use risingwave_hummock_sdk::table_watermark::{
     TableWatermarks, VnodeWatermark, WatermarkDirection,
 };
@@ -75,8 +75,25 @@ pub type StateStoreIterItem = (FullKey<Bytes>, Bytes);
 pub trait StateStoreIterItemStream = Stream<Item = StorageResult<StateStoreIterItem>> + Send;
 pub trait StateStoreReadIterStream = StateStoreIterItemStream + 'static;
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum ChangeLogValue<T> {
+    Insert(T),
+    Update { new_value: T, old_value: T },
+    Delete(T),
+}
+
+pub type StateStoreReadLogItem = (UserKey<Bytes>, ChangeLogValue<Bytes>);
+#[derive(Clone)]
+pub struct ReadLogOptions {
+    pub table_id: TableId,
+}
+
+pub trait StateStoreReadLogStream =
+    Stream<Item = StorageResult<StateStoreReadLogItem>> + Send + 'static;
+
 pub trait StateStoreRead: StaticSendSync {
     type IterStream: StateStoreReadIterStream;
+    type ChangeLogStream: StateStoreReadLogStream;
 
     /// Point gets a value from the state store.
     /// The result is based on a snapshot corresponding to the given `epoch`.
@@ -98,6 +115,13 @@ pub trait StateStoreRead: StaticSendSync {
         epoch: u64,
         read_options: ReadOptions,
     ) -> impl Future<Output = StorageResult<Self::IterStream>> + Send + '_;
+
+    fn iter_log(
+        &self,
+        epoch_range: (u64, u64),
+        key_range: TableKeyRange,
+        options: ReadLogOptions,
+    ) -> impl Future<Output = StorageResult<Self::ChangeLogStream>> + Send + '_;
 }
 
 pub trait StateStoreReadExt: StaticSendSync {
