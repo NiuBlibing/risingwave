@@ -90,22 +90,6 @@ pub(crate) struct SharedBufferVersionedEntryRef<'a> {
     pub(crate) old_values: Option<&'a [Bytes]>,
 }
 
-/// Return an exclusive offset of the values of key of index `i`
-fn value_end_offset<'a, T>(
-    i: usize,
-    entries: &'a [SharedBufferKeyEntry],
-    values: &'a [T],
-) -> usize {
-    entries
-        .get(i + 1)
-        .map(|entry| entry.value_offset)
-        .unwrap_or(values.len())
-}
-
-fn values<'a, T>(i: usize, entries: &'a [SharedBufferKeyEntry], values: &'a [T]) -> &'a [T] {
-    &values[entries[i].value_offset..value_end_offset(i, entries, values)]
-}
-
 #[derive(PartialEq, Debug)]
 pub(crate) struct SharedBufferKeyEntry {
     pub(crate) key: TableKey<Bytes>,
@@ -114,6 +98,24 @@ pub(crate) struct SharedBufferKeyEntry {
     /// as a single vector. `value_offset` is the starting offset of values of the current `key` in the `new_values` vector.
     /// The end offset is the `value_offset` of the next entry or the vector end if the current entry is not the last one.
     pub(crate) value_offset: usize,
+}
+
+impl SharedBufferKeyEntry {
+    /// Return an exclusive offset of the values of key of index `i`
+    fn value_end_offset<'a, T>(
+        i: usize,
+        entries: &'a [SharedBufferKeyEntry],
+        values: &'a [T],
+    ) -> usize {
+        entries
+            .get(i + 1)
+            .map(|entry| entry.value_offset)
+            .unwrap_or(values.len())
+    }
+
+    fn values<'a, T>(i: usize, entries: &'a [SharedBufferKeyEntry], values: &'a [T]) -> &'a [T] {
+        &values[entries[i].value_offset..Self::value_end_offset(i, entries, values)]
+    }
 }
 
 #[derive(Debug)]
@@ -167,7 +169,7 @@ impl SharedBufferBatchInner {
     }
 
     pub fn values(&self, i: usize) -> &[VersionedSharedBufferValue] {
-        values(i, &self.entries, &self.new_values)
+        SharedBufferKeyEntry::values(i, &self.entries, &self.new_values)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -184,10 +186,14 @@ impl SharedBufferBatchInner {
         assert!(!entries.is_empty());
         debug_assert!(entries.iter().is_sorted_by_key(|entry| &entry.key));
         debug_assert!(entries.iter().is_sorted_by_key(|entry| &entry.value_offset));
-        debug_assert!((0..entries.len()).all(|i| values(i, &entries, &new_values)
-            .iter()
-            .rev()
-            .is_sorted_by_key(|(epoch_with_gap, _)| epoch_with_gap)));
+        debug_assert!((0..entries.len()).all(|i| SharedBufferKeyEntry::values(
+            i,
+            &entries,
+            &new_values
+        )
+        .iter()
+        .rev()
+        .is_sorted_by_key(|(epoch_with_gap, _)| epoch_with_gap)));
         debug_assert!(!epochs.is_empty());
         debug_assert!(epochs.is_sorted());
 
@@ -593,7 +599,7 @@ impl<D: HummockIteratorDirection, const IS_NEW_VALUE: bool>
 
     fn get_value_end_offset(&self) -> usize {
         debug_assert!(self.is_valid_entry_idx());
-        value_end_offset(
+        SharedBufferKeyEntry::value_end_offset(
             self.current_entry_idx,
             &self.inner.entries,
             &self.inner.new_values,
