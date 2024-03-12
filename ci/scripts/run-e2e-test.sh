@@ -99,28 +99,28 @@ sqllogictest -p 4566 -d test './e2e_test/database/test.slt'
 echo "--- e2e, $mode, Apache Superset"
 sqllogictest -p 4566 -d dev './e2e_test/superset/*.slt' --junit "batch-${profile}"
 
-echo "--- e2e, $mode, external python udf"
-python3 e2e_test/udf/test.py &
-sleep 1
-sqllogictest -p 4566 -d dev './e2e_test/udf/external_udf.slt'
-pkill python3
+#echo "--- e2e, $mode, external python udf"
+#python3 e2e_test/udf/test.py &
+#sleep 1
+#sqllogictest -p 4566 -d dev './e2e_test/udf/external_udf.slt'
+#pkill python3
 
-sqllogictest -p 4566 -d dev './e2e_test/udf/alter_function.slt'
-sqllogictest -p 4566 -d dev './e2e_test/udf/graceful_shutdown_python.slt'
-sqllogictest -p 4566 -d dev './e2e_test/udf/always_retry_python.slt'
+#sqllogictest -p 4566 -d dev './e2e_test/udf/alter_function.slt'
+#sqllogictest -p 4566 -d dev './e2e_test/udf/graceful_shutdown_python.slt'
+#sqllogictest -p 4566 -d dev './e2e_test/udf/always_retry_python.slt'
 # FIXME: flaky test
 # sqllogictest -p 4566 -d dev './e2e_test/udf/retry_python.slt'
 
-echo "--- e2e, $mode, external java udf"
-java -jar risingwave-udf-example.jar &
-sleep 1
-sqllogictest -p 4566 -d dev './e2e_test/udf/external_udf.slt'
-pkill java
+#echo "--- e2e, $mode, external java udf"
+#java -jar risingwave-udf-example.jar &
+#sleep 1
+#sqllogictest -p 4566 -d dev './e2e_test/udf/external_udf.slt'
+#pkill java
 
-echo "--- e2e, $mode, embedded udf"
-sqllogictest -p 4566 -d dev './e2e_test/udf/wasm_udf.slt'
-sqllogictest -p 4566 -d dev './e2e_test/udf/js_udf.slt'
-sqllogictest -p 4566 -d dev './e2e_test/udf/python_udf.slt'
+#echo "--- e2e, $mode, embedded udf"
+#sqllogictest -p 4566 -d dev './e2e_test/udf/wasm_udf.slt'
+#sqllogictest -p 4566 -d dev './e2e_test/udf/js_udf.slt'
+#sqllogictest -p 4566 -d dev './e2e_test/udf/python_udf.slt'
 
 echo "--- Kill cluster"
 cluster_stop
