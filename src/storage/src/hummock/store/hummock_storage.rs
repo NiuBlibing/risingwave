@@ -260,7 +260,7 @@ impl HummockStorage {
         key_range: TableKeyRange,
         epoch: u64,
         read_options: ReadOptions,
-    ) -> StorageResult<StreamTypeOfIter<HummockStorageIterator>> {
+    ) -> StorageResult<HummockStorageIterator> {
         let (key_range, read_version_tuple) = if read_options.read_version_from_backup {
             self.build_read_version_tuple_from_backup(epoch, read_options.table_id, key_range)
                 .await?
@@ -442,8 +442,8 @@ impl HummockStorage {
 }
 
 impl StateStoreRead for HummockStorage {
-    type ChangeLogStream = PanicStateStoreStream<StateStoreReadLogItem>;
-    type IterStream = StreamTypeOfIter<HummockStorageIterator>;
+    type ChangeLogIter = PanicStateStoreIter<StateStoreReadLogItem>;
+    type Iter = HummockStorageIterator;
 
     fn get(
         &self,
@@ -459,7 +459,7 @@ impl StateStoreRead for HummockStorage {
         key_range: TableKeyRange,
         epoch: u64,
         read_options: ReadOptions,
-    ) -> impl Future<Output = StorageResult<Self::IterStream>> + '_ {
+    ) -> impl Future<Output = StorageResult<Self::Iter>> + '_ {
         let (l_vnode_inclusive, r_vnode_exclusive) = vnode_range(&key_range);
         assert_eq!(
             r_vnode_exclusive - l_vnode_inclusive,
@@ -476,7 +476,7 @@ impl StateStoreRead for HummockStorage {
         _epoch_range: (u64, u64),
         _key_range: TableKeyRange,
         _options: ReadLogOptions,
-    ) -> StorageResult<Self::ChangeLogStream> {
+    ) -> StorageResult<Self::ChangeLogIter> {
         unimplemented!()
     }
 }
@@ -582,7 +582,7 @@ impl StateStore for HummockStorage {
 #[cfg(any(test, feature = "test"))]
 use risingwave_hummock_sdk::version::HummockVersion;
 
-use crate::panic_store::PanicStateStoreStream;
+use crate::panic_store::PanicStateStoreIter;
 
 #[cfg(any(test, feature = "test"))]
 impl HummockStorage {

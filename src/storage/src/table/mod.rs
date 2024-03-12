@@ -31,7 +31,8 @@ use risingwave_hummock_sdk::key::TableKey;
 
 use crate::error::{StorageError, StorageResult};
 use crate::row_serde::value_serde::ValueRowSerde;
-use crate::store::{ChangeLogValue, StateStoreReadLogItem};
+use crate::store::{ChangeLogValue, StateStoreIterExt, StateStoreReadLogItem};
+use crate::StateStoreIter;
 
 // TODO: GAT-ify this trait or remove this trait
 #[async_trait::async_trait]
@@ -148,37 +149,27 @@ impl<T: AsRef<[u8]>> Deref for KeyedRow<T> {
 
 #[try_stream(ok = (Op, OwnedRow), error = StorageError)]
 pub async fn deserialize_log_stream<'a>(
-    stream: impl Stream<Item = StorageResult<StateStoreReadLogItem>> + 'a,
+    iter: impl StateStoreIter<StateStoreReadLogItem> + 'a,
     deserializer: &'a impl ValueRowSerde,
 ) {
+    let stream = iter.into_stream(|(_key, log_value)| {
+        log_value.try_map(|slice| Ok(OwnedRow::new(deserializer.deserialize(slice)?)))
+    });
     #[for_await]
-    for result in stream {
-        let (_key, log_value): StateStoreReadLogItem = result?;
-        match log_value {
-            ChangeLogValue::Insert(value) => {
-                yield (
-                    Op::Insert,
-                    deserializer.deserialize(&value).map(OwnedRow::new)?,
-                );
+    for log_value in stream {
+        match log_value? {
+            ChangeLogValue::Insert(row) => {
+                yield (Op::Insert, row);
             }
-            ChangeLogValue::Delete(value) => {
-                yield (
-                    Op::Delete,
-                    deserializer.deserialize(&value).map(OwnedRow::new)?,
-                );
+            ChangeLogValue::Delete(row) => {
+                yield (Op::Delete, row);
             }
             ChangeLogValue::Update {
                 new_value,
                 old_value,
             } => {
-                yield (
-                    Op::UpdateDelete,
-                    deserializer.deserialize(&old_value).map(OwnedRow::new)?,
-                );
-                yield (
-                    Op::UpdateInsert,
-                    deserializer.deserialize(&new_value).map(OwnedRow::new)?,
-                );
+                yield (Op::UpdateDelete, old_value);
+                yield (Op::UpdateInsert, new_value);
             }
         }
     }
