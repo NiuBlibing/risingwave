@@ -180,9 +180,7 @@ where
     /// async interface only used for replicated state table,
     /// as it needs to wait for prev epoch to be committed.
     pub async fn init_epoch(&mut self, epoch: EpochPair) -> StorageResult<()> {
-        self.local_store
-            .init(InitOptions::new(epoch, self.vnodes().clone()))
-            .await
+        self.local_store.init(InitOptions::new(epoch)).await
     }
 }
 
@@ -198,7 +196,7 @@ where
     /// No need to `wait_for_epoch`, so it should complete immediately.
     pub fn init_epoch(&mut self, epoch: EpochPair) {
         self.local_store
-            .init(InitOptions::new(epoch, self.vnodes().clone()))
+            .init(InitOptions::new(epoch))
             .now_or_never()
             .expect("non-replicated state store should start immediately.")
             .expect("non-replicated state store should not wait_for_epoch, and fail because of it.")
@@ -362,9 +360,19 @@ where
 
         let table_option = TableOption::new(table_catalog.retention_seconds);
         let new_local_options = if IS_REPLICATED {
-            NewLocalOptions::new_replicated(table_id, op_consistency_level, table_option)
+            NewLocalOptions::new_replicated(
+                table_id,
+                op_consistency_level,
+                table_option,
+                distribution.vnodes().clone(),
+            )
         } else {
-            NewLocalOptions::new(table_id, op_consistency_level, table_option)
+            NewLocalOptions::new(
+                table_id,
+                op_consistency_level,
+                table_option,
+                distribution.vnodes().clone(),
+            )
         };
         let local_state_store = store.new_local(new_local_options).await;
 
@@ -577,6 +585,7 @@ where
                 table_id,
                 op_consistency_level,
                 TableOption::default(),
+                distribution.vnodes().clone(),
             ))
             .await;
         let row_serde = make_row_serde();

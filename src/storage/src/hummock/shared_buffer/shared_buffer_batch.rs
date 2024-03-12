@@ -32,7 +32,7 @@ use risingwave_hummock_sdk::EpochWithGap;
 use crate::hummock::event_handler::LocalInstanceId;
 use crate::hummock::iterator::{
     Backward, DeleteRangeIterator, DirectionEnum, Forward, HummockIterator,
-    HummockIteratorDirection,
+    HummockIteratorDirection, ValueMeta,
 };
 use crate::hummock::utils::{range_overlap, MemoryTracker};
 use crate::hummock::value::HummockValue;
@@ -796,6 +796,10 @@ impl<D: HummockIteratorDirection, const IS_NEW_VALUE: bool> HummockIterator
     }
 
     fn collect_local_statistic(&self, _stats: &mut crate::monitor::StoreLocalStatistic) {}
+
+    fn value_meta(&self) -> ValueMeta {
+        ValueMeta::default()
+    }
 }
 
 pub struct SharedBufferDeleteRangeIterator {
@@ -918,6 +922,7 @@ mod tests {
     use std::ops::Bound::{Excluded, Included};
 
     use itertools::zip_eq;
+    use risingwave_common::util::epoch::{test_epoch, EpochExt};
     use risingwave_hummock_sdk::key::map_table_key_range;
 
     use super::*;
@@ -934,7 +939,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shared_buffer_batch_basic() {
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let shared_buffer_items: Vec<(Vec<u8>, SharedBufferValue<Bytes>)> = vec![
             (
                 iterator_test_table_key_of(0),
@@ -1023,7 +1028,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shared_buffer_batch_seek() {
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let shared_buffer_items = vec![
             (
                 iterator_test_table_key_of(1),
@@ -1080,7 +1085,7 @@ mod tests {
 
         // FORWARD: Seek to 2nd key with future epoch, expect last two items to return
         let mut iter = shared_buffer_batch.clone().into_forward_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch + 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, test_epoch(2)).to_ref())
             .await
             .unwrap();
         for item in &shared_buffer_items[1..] {
@@ -1093,7 +1098,7 @@ mod tests {
 
         // FORWARD: Seek to 2nd key with old epoch, expect last item to return
         let mut iter = shared_buffer_batch.clone().into_forward_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch - 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, test_epoch(0)).to_ref())
             .await
             .unwrap();
         let item = shared_buffer_items.last().unwrap();
@@ -1138,7 +1143,7 @@ mod tests {
 
         // BACKWARD: Seek to 2nd key with old epoch, expect first item to return
         let mut iter = shared_buffer_batch.clone().into_backward_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch - 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, epoch.prev_epoch()).to_ref())
             .await
             .unwrap();
         assert!(iter.is_valid());
@@ -1150,7 +1155,7 @@ mod tests {
 
         // BACKWARD: Seek to 2nd key with future epoch, expect first two item to return
         let mut iter = shared_buffer_batch.clone().into_backward_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch + 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, epoch.next_epoch()).to_ref())
             .await
             .unwrap();
         for item in shared_buffer_items[0..=1].iter().rev() {
@@ -1337,7 +1342,7 @@ mod tests {
     #[tokio::test]
     #[should_panic]
     async fn test_invalid_table_id() {
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let shared_buffer_batch = SharedBufferBatch::for_test(vec![], epoch, Default::default());
         // Seeking to non-current epoch should panic
         let mut iter = shared_buffer_batch.into_forward_iter();
@@ -1348,7 +1353,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shared_buffer_batch_range_existx() {
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let shared_buffer_items = vec![
             (
                 Vec::from("a_1"),
@@ -1419,7 +1424,7 @@ mod tests {
                 SharedBufferValue::Insert(Bytes::from("value3")),
             ),
         ];
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let imm1 = SharedBufferBatch::for_test(
             transform_shared_buffer(shared_buffer_items1.clone()),
             epoch,
@@ -1440,7 +1445,7 @@ mod tests {
                 SharedBufferValue::Insert(Bytes::from("value32")),
             ),
         ];
-        let epoch = 2;
+        let epoch = test_epoch(2);
         let imm2 = SharedBufferBatch::for_test(
             transform_shared_buffer(shared_buffer_items2.clone()),
             epoch,
@@ -1462,7 +1467,7 @@ mod tests {
                 SharedBufferValue::Insert(Bytes::from("value33")),
             ),
         ];
-        let epoch = 3;
+        let epoch = test_epoch(3);
         let imm3 = SharedBufferBatch::for_test(
             transform_shared_buffer(shared_buffer_items3.clone()),
             epoch,
@@ -1671,14 +1676,14 @@ mod tests {
                     merged_imm
                         .get(
                             TableKey(key.as_slice()),
-                            i as u64 + 1,
+                            test_epoch(i as u64 + 1),
                             &ReadOptions::default()
                         )
                         .unwrap()
                         .0,
                     value.clone(),
                     "epoch: {}, key: {:?}",
-                    i + 1,
+                    test_epoch(i as u64 + 1),
                     String::from_utf8(key.clone())
                 );
             }
@@ -1686,7 +1691,7 @@ mod tests {
         assert_eq!(
             merged_imm.get(
                 TableKey(iterator_test_table_key_of(4).as_slice()),
-                1,
+                test_epoch(1),
                 &ReadOptions::default()
             ),
             None
@@ -1694,14 +1699,15 @@ mod tests {
         assert_eq!(
             merged_imm.get(
                 TableKey(iterator_test_table_key_of(5).as_slice()),
-                1,
+                test_epoch(1),
                 &ReadOptions::default()
             ),
             None
         );
 
-        // Forward iterator
-        for snapshot_epoch in 1..=3 {
+        // Forward i
+        for i in 1..=3 {
+            let snapshot_epoch = test_epoch(i);
             let mut iter = merged_imm.clone().into_forward_iter();
             iter.rewind().await.unwrap();
             let mut output = vec![];
@@ -1715,7 +1721,7 @@ mod tests {
                 }
                 iter.next().await.unwrap();
             }
-            assert_eq!(output, batch_items[snapshot_epoch as usize - 1]);
+            assert_eq!(output, batch_items[i as usize - 1]);
         }
 
         // Forward and Backward iterator

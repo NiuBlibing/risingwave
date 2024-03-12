@@ -198,6 +198,7 @@ pub mod sled {
 
         use bytes::Bytes;
         use risingwave_common::catalog::TableId;
+        use risingwave_common::util::epoch::EPOCH_SPILL_TIME_MASK;
         use risingwave_hummock_sdk::key::{FullKey, TableKey, UserKey};
         use risingwave_hummock_sdk::EpochWithGap;
 
@@ -218,7 +219,7 @@ pub mod sled {
                     table_id,
                     table_key: TableKey(Bytes::from(table_key.to_vec())),
                 },
-                epoch_with_gap: EpochWithGap::new_from_epoch(epoch),
+                epoch_with_gap: EpochWithGap::new_from_epoch(epoch & !EPOCH_SPILL_TIME_MASK),
             };
 
             let left_full_key = to_full_key(&left_table_key[..]);
@@ -722,6 +723,9 @@ impl<R: RangeKv> RangeKvStateStoreIter<R> {
 
 #[cfg(test)]
 mod tests {
+
+    use risingwave_common::util::epoch::test_epoch;
+
     use super::*;
     use crate::memory::sled::SledStateStore;
 
@@ -772,7 +776,7 @@ mod tests {
                 ],
                 vec![],
                 WriteOptions {
-                    epoch: 1,
+                    epoch: test_epoch(1),
                     table_id: Default::default(),
                 },
             )
@@ -830,13 +834,13 @@ mod tests {
                         Bound::Included(TableKey(Bytes::from("a"))),
                         Bound::Included(TableKey(Bytes::from("b"))),
                     ),
-                    1,
+                    test_epoch(1),
                     TableId::default(),
                     None,
                 )
                 .unwrap(),
             vec![(
-                FullKey::for_test(Default::default(), b"a".to_vec(), 1)
+                FullKey::for_test(Default::default(), b"a".to_vec(), test_epoch(1))
                     .encode()
                     .into(),
                 b"v2".to_vec().into()
@@ -875,7 +879,7 @@ mod tests {
             state_store
                 .get(
                     TableKey(Bytes::copy_from_slice(b"a")),
-                    1,
+                    test_epoch(1),
                     ReadOptions::default(),
                 )
                 .await
@@ -884,14 +888,22 @@ mod tests {
         );
         assert_eq!(
             state_store
-                .get(TableKey(Bytes::from("b")), 1, ReadOptions::default(),)
+                .get(
+                    TableKey(Bytes::from("b")),
+                    test_epoch(1),
+                    ReadOptions::default(),
+                )
                 .await
                 .unwrap(),
             None
         );
         assert_eq!(
             state_store
-                .get(TableKey(Bytes::from("c")), 1, ReadOptions::default())
+                .get(
+                    TableKey(Bytes::from("c")),
+                    test_epoch(1),
+                    ReadOptions::default()
+                )
                 .await
                 .unwrap(),
             None
