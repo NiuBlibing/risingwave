@@ -108,12 +108,19 @@ pub async fn compact(
         .filter(|imm| imm.has_old_value())
         .collect_vec();
 
-    let old_value_future = compact_shared_buffer::<false>(
-        context.clone(),
-        sstable_object_id_manager,
-        filter_key_extractor_manager,
-        old_value_payload,
-    );
+    let old_value_future = async {
+        if old_value_payload.is_empty() {
+            Ok(vec![])
+        } else {
+            compact_shared_buffer::<false>(
+                context.clone(),
+                sstable_object_id_manager,
+                filter_key_extractor_manager,
+                old_value_payload,
+            )
+            .await
+        }
+    };
 
     // Note that the output is reordered compared with input `payload`.
     let (grouped_new_value_ssts, old_value_ssts) =

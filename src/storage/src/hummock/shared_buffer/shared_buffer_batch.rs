@@ -1169,7 +1169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shared_buffer_batch_old_value_iter() {
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let key_values = vec![
             (
                 iterator_test_table_key_of(1),
@@ -1278,7 +1278,7 @@ mod tests {
 
         // FORWARD: Seek to 2nd key with future epoch, expect last two items to return
         let mut iter = shared_buffer_batch.clone().into_forward_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch + 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, epoch.next_epoch()).to_ref())
             .await
             .unwrap();
         for item in &shared_buffer_items[1..] {
@@ -1290,7 +1290,7 @@ mod tests {
         assert!(!iter.is_valid());
 
         let mut iter = shared_buffer_batch.clone().into_old_value_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch + 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, epoch.next_epoch()).to_ref())
             .await
             .unwrap();
         for item in &expected_old_value_iter_items {
@@ -1302,7 +1302,7 @@ mod tests {
         assert!(!iter.is_valid());
 
         let mut iter = shared_buffer_batch.clone().into_old_value_iter();
-        iter.seek(iterator_test_key_of_epoch(2, epoch - 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(2, epoch.prev_epoch()).to_ref())
             .await
             .unwrap();
         for item in &expected_old_value_iter_items[1..] {
@@ -1315,7 +1315,7 @@ mod tests {
 
         // FORWARD: Seek to 2nd key with old epoch, expect last item to return
         let mut iter = shared_buffer_batch.clone().into_forward_iter();
-        iter.seek(iterator_test_key_of_epoch(3, epoch - 1).to_ref())
+        iter.seek(iterator_test_key_of_epoch(3, epoch.prev_epoch()).to_ref())
             .await
             .unwrap();
         let item = shared_buffer_items.last().unwrap();
@@ -1491,14 +1491,14 @@ mod tests {
                     merged_imm
                         .get(
                             TableKey(key.as_slice()),
-                            i as u64 + 1,
+                            test_epoch(i as u64 + 1),
                             &ReadOptions::default()
                         )
                         .unwrap()
                         .0,
                     value.clone(),
                     "epoch: {}, key: {:?}",
-                    i + 1,
+                    test_epoch(i as u64 + 1),
                     String::from_utf8(key.clone())
                 );
             }
@@ -1506,7 +1506,7 @@ mod tests {
         assert_eq!(
             merged_imm.get(
                 TableKey(iterator_test_table_key_of(4).as_slice()),
-                1,
+                test_epoch(1),
                 &ReadOptions::default()
             ),
             None
@@ -1514,7 +1514,7 @@ mod tests {
         assert_eq!(
             merged_imm.get(
                 TableKey(iterator_test_table_key_of(5).as_slice()),
-                1,
+                test_epoch(1),
                 &ReadOptions::default()
             ),
             None
@@ -1527,7 +1527,7 @@ mod tests {
             let mut output = vec![];
             while iter.is_valid() {
                 let epoch = iter.key().epoch_with_gap.pure_epoch();
-                if snapshot_epoch == epoch {
+                if test_epoch(snapshot_epoch) == epoch {
                     output.push((
                         iter.key().user_key.table_key.to_vec(),
                         iter.value().to_bytes(),
@@ -1600,7 +1600,7 @@ mod tests {
             Bytes::from("old_value2"),
             Bytes::from("old_value3"),
         ];
-        let epoch = 1;
+        let epoch = test_epoch(1);
         let imm1 = SharedBufferBatch::for_test_with_old_values(
             transform_shared_buffer(key_value1.clone()),
             old_value1.clone(),
@@ -1623,7 +1623,7 @@ mod tests {
             ),
         ];
         let old_value2 = vec![Bytes::from("value1"), Bytes::from("value2"), Bytes::new()];
-        let epoch = 2;
+        let epoch = epoch.next_epoch();
         let imm2 = SharedBufferBatch::for_test_with_old_values(
             transform_shared_buffer(key_value2.clone()),
             old_value2.clone(),
@@ -1645,7 +1645,7 @@ mod tests {
             Bytes::from("value22"),
             Bytes::from("value32"),
         ];
-        let epoch = 3;
+        let epoch = epoch.next_epoch();
         let imm3 = SharedBufferBatch::for_test_with_old_values(
             transform_shared_buffer(key_value3.clone()),
             old_value3.clone(),
