@@ -17,6 +17,8 @@ use risingwave_pb::hummock::{
     PbChangeLogShard, PbEpochNewChangeLog, PbTableChangeLog, SstableInfo,
 };
 
+use crate::key::{vnode, TableKeyRange};
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChangeLogShard {
     pub new_value: Vec<SstableInfo>,
@@ -32,6 +34,33 @@ pub struct EpochNewChangeLog {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableChangeLog(pub Vec<EpochNewChangeLog>);
+
+impl TableChangeLog {
+    pub fn filter(
+        &self,
+        (min_epoch, max_epoch): (u64, u64),
+        key_range: &TableKeyRange,
+    ) -> (Vec<SstableInfo>, Vec<SstableInfo>) {
+        let mut new_value_sst = Vec::new();
+        let mut old_value_sst = Vec::new();
+        let vnode = vnode(key_range);
+        for epoch_change_log in &self.0 {
+            if epoch_change_log.epochs.last().expect("non-empty") < &min_epoch {
+                continue;
+            }
+            if epoch_change_log.epochs.first().expect("non-empty") > &max_epoch {
+                break;
+            }
+            for shard in &epoch_change_log.shards {
+                if shard.vnode_bitmap.is_set(vnode.to_index()) {
+                    new_value_sst.extend_from_slice(shard.new_value.as_slice());
+                    old_value_sst.extend_from_slice(shard.old_value.as_slice());
+                }
+            }
+        }
+        (new_value_sst, old_value_sst)
+    }
+}
 
 impl TableChangeLog {
     pub fn to_protobuf(&self) -> PbTableChangeLog {

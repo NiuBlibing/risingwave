@@ -30,7 +30,8 @@ use super::version::{StagingData, VersionUpdate};
 use crate::error::StorageResult;
 use crate::hummock::event_handler::{HummockEvent, HummockReadVersionRef, LocalInstanceGuard};
 use crate::hummock::iterator::{
-    ConcatIteratorInner, Forward, HummockIteratorUnion, MergeIterator, UserIterator,
+    ChangeLogIterator, ConcatIteratorInner, Forward, HummockIteratorUnion, MergeIterator,
+    UserIterator,
 };
 use crate::hummock::shared_buffer::shared_buffer_batch::{
     SharedBufferBatch, SharedBufferBatchIterator, SharedBufferItem, SharedBufferValue,
@@ -44,7 +45,6 @@ use crate::hummock::write_limiter::WriteLimiterRef;
 use crate::hummock::{MemoryLimiter, SstableIterator};
 use crate::mem_table::{KeyOp, MemTable, MemTableHummockIterator};
 use crate::monitor::{HummockStateStoreMetrics, IterLocalMetricsGuard, StoreLocalStatistic};
-use crate::panic_store::PanicStateStoreIter;
 use crate::store::*;
 
 /// `LocalHummockStorage` is a handle for a state table shard to access data from and write data to
@@ -206,7 +206,7 @@ impl LocalHummockStorage {
 }
 
 impl StateStoreRead for LocalHummockStorage {
-    type ChangeLogIter = PanicStateStoreIter<StateStoreReadLogItem>;
+    type ChangeLogIter = ChangeLogIterator;
     type Iter = HummockStorageIterator;
 
     fn get(
@@ -232,11 +232,16 @@ impl StateStoreRead for LocalHummockStorage {
 
     async fn iter_log(
         &self,
-        _epoch_range: (u64, u64),
-        _key_range: TableKeyRange,
-        _options: ReadLogOptions,
+        epoch_range: (u64, u64),
+        key_range: TableKeyRange,
+        options: ReadLogOptions,
     ) -> StorageResult<Self::ChangeLogIter> {
-        unimplemented!()
+        let version = self.read_version.read().committed().clone();
+        let iter = self
+            .hummock_version_reader
+            .iter_log(version, epoch_range, key_range, options)
+            .await?;
+        Ok(iter)
     }
 }
 
