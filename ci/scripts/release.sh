@@ -70,10 +70,10 @@ cd target/release && chmod +x risingwave risectl
 echo "--- Upload nightly binary to s3"
 if [ "${BUILDKITE_SOURCE}" == "schedule" ]; then
   tar -czvf risingwave-"$(date '+%Y%m%d')"-${ARCH}-unknown-linux.tar.gz risingwave
-  aws s3 cp risingwave-"$(date '+%Y%m%d')"-${ARCH}-unknown-linux.tar.gz s3://risingwave-nightly-pre-built-binary
+  aws s3 cp risingwave-"$(date '+%Y%m%d')"-${ARCH}-unknown-linux.tar.gz s3://rw-nightly-pre-built-binary
 elif [[ -n "${BINARY_NAME+x}" ]]; then
     tar -czvf risingwave-${BINARY_NAME}-${ARCH}-unknown-linux.tar.gz risingwave
-    aws s3 cp risingwave-${BINARY_NAME}-${ARCH}-unknown-linux.tar.gz s3://risingwave-nightly-pre-built-binary
+    aws s3 cp risingwave-${BINARY_NAME}-${ARCH}-unknown-linux.tar.gz s3://rw-nightly-pre-built-binary
 fi
 
 echo "--- Build connector node"
