@@ -888,6 +888,12 @@ pub struct StreamingDeveloperConfig {
     /// The max heap size of dirty groups of `HashAggExecutor`.
     #[serde(default = "default::developer::stream_hash_agg_max_dirty_groups_heap_size")]
     pub hash_agg_max_dirty_groups_heap_size: usize,
+
+    #[serde(default = "default::developer::stream_disable_arrangement_backfill")]
+    /// Disable arrangement backfill
+    /// If true, the arrangement backfill will be disabled,
+    /// even if session variable set.
+    pub disable_arrangement_backfill: bool,
 }
 
 /// The subsections `[batch.developer]`.
@@ -1487,6 +1493,10 @@ pub mod default {
         }
 
         pub fn enable_check_task_level_overlap() -> bool {
+            false
+        }
+
+        pub fn stream_disable_arrangement_backfill() -> bool {
             false
         }
     }
