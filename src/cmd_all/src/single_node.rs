@@ -172,7 +172,6 @@ impl SingleNodeOpts {
             etcd_username: Default::default(),
             etcd_password: Default::default(),
             sql_endpoint: Some(DEFAULT_SINGLE_NODE_SQL_ENDPOINT.clone()),
-            dashboard_ui_path: None,
             prometheus_endpoint: None,
             prometheus_selector: None,
             connector_rpc_endpoint: None,
