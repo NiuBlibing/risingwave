@@ -1079,6 +1079,24 @@ impl HummockManager {
                     compact_task.table_watermarks = current_version
                         .safe_epoch_table_watermarks(&compact_task.existing_table_ids);
 
+                    if self.env.opts.enable_dropped_column_reclaim {
+                        compact_task.table_schemas = match self.metadata_manager() {
+                            MetadataManager::V1(mgr) => mgr
+                                .catalog_manager
+                                .get_versioned_table_schemas(&task.existing_table_ids)
+                                .await
+                                .into_iter()
+                                .map(|(table_id, column_ids)| {
+                                    (table_id, TableSchema { column_ids })
+                                })
+                                .collect(),
+                            MetadataManager::V2(_) => {
+                                // TODO #13952: support V2
+                                BTreeMap::default()
+                            }
+                        }
+                    }
+
                     compact_task_assignment.insert(
                         compact_task.task_id,
                         CompactTaskAssignment {
